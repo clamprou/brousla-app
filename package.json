@@ -1,0 +1,19 @@
+{
+  "name": "brousla-app",
+  "version": "1.0.0",
+  "description": "AI Content Creation App",
+  "main": "index.js",
+  "scripts": {
+    "test": "test command!"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clamprou/brousla-app.git"
+  },
+  "author": "Christos Lamproy",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/clamprou/brousla-app/issues"
+  },
+  "homepage": "https://github.com/clamprou/brousla-app#readme"
+}
