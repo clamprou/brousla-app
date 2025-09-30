@@ -1,10 +1,19 @@
 {
   "name": "brousla-app",
   "version": "1.0.0",
-  "description": "AI Content Creation App",
-  "main": "index.js",
+  "description": "Electron + React desktop MVP with Python backend",
+  "main": "electron/main.js",
+  "type": "module",
   "scripts": {
-    "test": "test command!"
+    "dev": "cross-env VITE_DEV_SERVER_PORT=5173 concurrently \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:backend\"",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev:backend": "python ./server/main.py",
+    "build": "npm run build:renderer && electron-builder -wml",
+    "build:renderer": "vite build",
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "echo 'add linter later'",
+    "start": "electron ."
   },
   "repository": {
     "type": "git",
@@ -15,5 +24,52 @@
   "bugs": {
     "url": "https://github.com/clamprou/brousla-app/issues"
   },
-  "homepage": "https://github.com/clamprou/brousla-app#readme"
+  "homepage": "https://github.com/clamprou/brousla-app#readme",
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.7",
+    "@types/react-dom": "^18.3.0",
+    "concurrently": "^9.0.1",
+    "electron": "^38.2.0",
+    "electron-builder": "^25.1.8",
+    "@vitejs/plugin-react": "^4.3.3",
+    "wait-on": "^8.0.2",
+    "vite": "^5.4.8",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "axios": "^1.7.7"
+  },
+  "build": {
+    "appId": "com.brousla.app",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "server/**",
+      "assets/**",
+      "models/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "brousla-setup-${version}.exe"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility"
+    }
+  }
 }
