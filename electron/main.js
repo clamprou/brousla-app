@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
+import { existsSync } from 'fs'
 import { spawn } from 'child_process'
 
 let mainWindow = null
@@ -10,11 +11,12 @@ function getIsDev() {
 }
 
 function createWindow() {
+  const appBasePath = app.isPackaged ? process.resourcesPath : process.cwd()
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     webPreferences: {
-      preload: path.join(process.cwd(), 'electron', 'preload.js'),
+      preload: path.join(appBasePath, 'electron', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -25,7 +27,16 @@ function createWindow() {
     mainWindow.loadURL(`http://localhost:${devServerPort}`)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    mainWindow.loadFile(path.join(process.cwd(), 'dist', 'index.html'))
+    const distIndexPath = path.join(appBasePath, 'dist', 'index.html')
+    if (!existsSync(distIndexPath)) {
+      dialog.showErrorBox(
+        'Renderer build missing',
+        'Could not find dist/index.html. Run "npm run dev" for development or "npm run build" to create production assets.'
+      )
+      app.quit()
+      return
+    }
+    mainWindow.loadFile(distIndexPath)
   }
 }
 
