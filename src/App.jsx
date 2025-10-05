@@ -10,6 +10,18 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [activeKey, setActiveKey] = useState('text-to-image')
 
+  // Global navigation event to allow pages to trigger navigation without props drilling
+  React.useEffect(() => {
+    const handler = (e) => {
+      const key = e?.detail
+      if (typeof key === 'string') {
+        setActiveKey(key)
+      }
+    }
+    window.addEventListener('navigate', handler)
+    return () => window.removeEventListener('navigate', handler)
+  }, [])
+
   const items = useMemo(() => ([
     { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon },
     { key: 'image-to-video', label: 'Image to Video', icon: Film },
