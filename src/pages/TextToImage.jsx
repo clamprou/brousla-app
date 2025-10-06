@@ -49,10 +49,6 @@ export default function TextToImage() {
     }
   }, [imageUrl])
 
-  const handleRegenerate = useCallback(() => {
-    startGeneration()
-  }, [startGeneration])
-
   const navigateToImageToVideo = useCallback(() => {
     const ev = new CustomEvent('navigate', { detail: 'image-to-video' })
     window.dispatchEvent(ev)
@@ -166,20 +162,6 @@ export default function TextToImage() {
                 ${imageUrl ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-gray-800/50 text-gray-400 cursor-not-allowed'}`}
             >
               Download Image
-            </button>
-            <button
-              onClick={handleRegenerate}
-              disabled={isGenerating || !prompt.trim()}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors
-                ${isGenerating || !prompt.trim() ? 'bg-gray-800/50 text-gray-400 cursor-not-allowed' : 'bg-gray-800 hover:bg-gray-700 text-white'}`}
-            >
-              Regenerate
-            </button>
-            <button
-              onClick={navigateToImageToVideo}
-              className="rounded-lg px-4 py-2 text-sm font-medium transition-colors bg-indigo-600 hover:bg-indigo-500 text-white"
-            >
-              Use as Input for Video
             </button>
           </div>
         </div>

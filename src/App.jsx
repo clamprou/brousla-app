@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import TopBar from './components/TopBar.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import TextToImage from './pages/TextToImage.jsx'
 import ImageToVideo from './pages/ImageToVideo.jsx'
@@ -45,16 +46,19 @@ export default function App() {
   }, [activeKey])
 
   return (
-    <div className="app-shell flex bg-gray-950">
-      <Sidebar
-        items={items}
-        activeKey={activeKey}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(v => !v)}
-        onSelect={setActiveKey}
-      />
-      <div className="flex-1 overflow-auto">
-        {page}
+    <div className="app-shell flex flex-col bg-gray-950">
+      <TopBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          items={items}
+          activeKey={activeKey}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed(v => !v)}
+          onSelect={setActiveKey}
+        />
+        <div className="flex-1 overflow-auto">
+          {page}
+        </div>
       </div>
     </div>
   )

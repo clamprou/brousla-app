@@ -2,7 +2,7 @@
   "name": "brousla-app",
   "version": "1.0.0",
   "description": "Electron + React desktop MVP with Python backend",
-  "main": "electron/main.js",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "cross-env VITE_DEV_SERVER_PORT=5173 concurrently \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:backend\"",

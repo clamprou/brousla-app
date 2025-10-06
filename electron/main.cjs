@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import path from 'path'
-import { existsSync } from 'fs'
-import { spawn } from 'child_process'
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
+const path = require('path')
+const { existsSync } = require('fs')
+const { spawn } = require('child_process')
 
 let mainWindow = null
 let pythonProcess = null
@@ -15,8 +15,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    frame: false, // Remove default frame for custom title bar
+    titleBarStyle: 'hidden',
     webPreferences: {
-      preload: path.join(appBasePath, 'electron', 'preload.js'),
+      preload: path.join(appBasePath, 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -56,6 +58,9 @@ function stopPython() {
 app.whenReady().then(() => {
   startPython()
   createWindow()
+  
+  // Disable the default menu
+  Menu.setApplicationMenu(null)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -73,5 +78,18 @@ app.on('before-quit', () => {
 })
 
 ipcMain.handle('app:getVersion', () => app.getVersion())
+
+// Window control handlers
+ipcMain.handle('window:minimize', () => {
+  if (mainWindow) {
+    mainWindow.minimize()
+  }
+})
+
+ipcMain.handle('window:close', () => {
+  if (mainWindow) {
+    mainWindow.close()
+  }
+})
 
 
