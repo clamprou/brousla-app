@@ -5,7 +5,8 @@ import TextToImage from './pages/TextToImage.jsx'
 import ImageToVideo from './pages/ImageToVideo.jsx'
 import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
-import { ImageIcon, Film, Type, Settings as SettingsIcon } from 'lucide-react'
+import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
+import AIComposer from './pages/AIComposer.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -24,10 +25,14 @@ export default function App() {
   }, [])
 
   const items = useMemo(() => ([
-    { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon },
-    { key: 'image-to-video', label: 'Image to Video', icon: Film },
-    { key: 'text-to-video', label: 'Text to Video', icon: Type },
-    { key: 'settings', label: 'Settings', icon: SettingsIcon }
+    // Manual Generation (ordered: Image to Video, Text to Video, Text to Image)
+    { key: 'image-to-video', label: 'Image to Video', icon: Film, group: 'manual' },
+    { key: 'text-to-video', label: 'Text to Video', icon: Type, group: 'manual' },
+    { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon, group: 'manual' },
+    // AI Workflows
+    { key: 'ai-composer', label: 'AI Composer', icon: Bot, group: 'ai' },
+    // Settings
+    { key: 'settings', label: 'Settings', icon: SettingsIcon, group: 'settings' }
   ]), [])
 
   const page = useMemo(() => {
@@ -38,6 +43,8 @@ export default function App() {
         return <ImageToVideo />
       case 'text-to-video':
         return <TextToVideo />
+      case 'ai-composer':
+        return <AIComposer />
       case 'settings':
         return <Settings />
       default:

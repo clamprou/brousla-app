@@ -1,5 +1,6 @@
 import React from 'react'
 import { Upload, Settings as SettingsIcon, ChevronDown, ChevronRight, Loader2, Download, RotateCcw, ArrowRight } from 'lucide-react'
+import ModelSelector from '../components/ModelSelector.jsx'
 
 export default function ImageToVideo() {
   const [selectedImage, setSelectedImage] = React.useState(null)
@@ -10,7 +11,7 @@ export default function ImageToVideo() {
   const [showAdvanced, setShowAdvanced] = React.useState(false)
   const [durationSec, setDurationSec] = React.useState(5)
   const [motionStrength, setMotionStrength] = React.useState(50)
-  const [model, setModel] = React.useState('FLUX Schnell')
+  const [model, setModel] = React.useState('Wan2.1')
   const [fps, setFps] = React.useState(24)
   const [videoUrl, setVideoUrl] = React.useState('')
 
@@ -81,6 +82,12 @@ export default function ImageToVideo() {
 
   return (
     <div className="p-6">
+      <div className="mb-4">
+        <h2 className="text-gray-200 text-base font-semibold">Image to Video</h2>
+        <div className="mt-2">
+          <ModelSelector value={model} onChange={setModel} options={["Wan2.1", "Wan2.2"]} />
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left section */}
         <div className="space-y-6">
@@ -173,20 +180,7 @@ export default function ImageToVideo() {
                   />
                 </div>
 
-                {/* Model selector */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm text-gray-300">Model</label>
-                    <select
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="mt-1 w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200"
-                    >
-                      <option>FLUX Schnell</option>
-                      <option>HiDiffusion</option>
-                      <option>AnimateDiff</option>
-                    </select>
-                  </div>
                   <div>
                     <label className="text-sm text-gray-300">FPS</label>
                     <select

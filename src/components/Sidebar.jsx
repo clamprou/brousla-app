@@ -1,6 +1,6 @@
 import React from 'react'
 import SidebarItem from './SidebarItem.jsx'
-import { ImageIcon, Film, Type, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { ImageIcon, Film, Type, Settings, PanelLeftClose, PanelLeftOpen, Bot } from 'lucide-react'
 
 export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse, onSelect }) {
   return (
@@ -16,17 +16,40 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
         </button>
       </div>
 
-      <div className="flex-1 space-y-1">
-        {items.map(item => (
-          <SidebarItem
-            key={item.key}
-            icon={item.icon}
-            label={item.label}
-            active={activeKey === item.key}
-            collapsed={collapsed}
-            onClick={() => onSelect(item.key)}
-          />
-        ))}
+      <div className="flex-1 space-y-3">
+        {/* AI Workflows group */}
+        <div>
+          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500">AI Workflows</div>}
+          <div className="space-y-1">
+            {items.filter(i => i.group === 'ai').map(item => (
+              <SidebarItem
+                key={item.key}
+                icon={item.icon}
+                label={item.label}
+                active={activeKey === item.key}
+                collapsed={collapsed}
+                onClick={() => onSelect(item.key)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Manual Generation group */}
+        <div>
+          {!collapsed && <div className="mt-2 px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500">Manual Generation</div>}
+          <div className="space-y-1">
+            {items.filter(i => i.group === 'manual').map(item => (
+              <SidebarItem
+                key={item.key}
+                icon={item.icon}
+                label={item.label}
+                active={activeKey === item.key}
+                collapsed={collapsed}
+                onClick={() => onSelect(item.key)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="text-[10px] text-gray-500 text-center">v{window.electron?.appVersion || ''}</div>
