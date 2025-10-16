@@ -25,10 +25,10 @@ export default function App() {
   }, [])
 
   const items = useMemo(() => ([
-    // Manual Generation (ordered: Image to Video, Text to Video, Text to Image)
+    // Manual Generation (ordered: Text to Image, Image to Video, Text to Video)
+    { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon, group: 'manual' },
     { key: 'image-to-video', label: 'Image to Video', icon: Film, group: 'manual' },
     { key: 'text-to-video', label: 'Text to Video', icon: Type, group: 'manual' },
-    { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon, group: 'manual' },
     // AI Workflows
     { key: 'ai-composer', label: 'AI Composer', icon: Bot, group: 'ai' },
     // Settings
