@@ -36,7 +36,7 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
 
         {/* AI Workflows group */}
         <div>
-          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">AI Workflow Generation</div>}
+          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">AI Workflows</div>}
           <div className="space-y-1">
             {items.filter(i => i.group === 'ai').map(item => (
               <SidebarItem

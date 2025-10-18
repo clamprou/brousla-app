@@ -6,7 +6,7 @@ import ImageToVideo from './pages/ImageToVideo.jsx'
 import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
 import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
-import AIComposer from './pages/AIComposer.jsx'
+import AIWorkflows from './pages/AIWorkflows.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -30,7 +30,7 @@ export default function App() {
     { key: 'image-to-video', label: 'Image to Video', icon: Film, group: 'manual' },
     { key: 'text-to-video', label: 'Text to Video', icon: Type, group: 'manual' },
     // AI Workflows
-    { key: 'ai-composer', label: 'AI Composer', icon: Bot, group: 'ai' },
+    { key: 'ai-composer', label: 'AI Workflows', icon: Bot, group: 'ai' },
     // Settings
     { key: 'settings', label: 'Settings', icon: SettingsIcon, group: 'settings' }
   ]), [])
@@ -44,7 +44,7 @@ export default function App() {
       case 'text-to-video':
         return <TextToVideo />
       case 'ai-composer':
-        return <AIComposer />
+        return <AIWorkflows />
       case 'settings':
         return <Settings />
       default:

@@ -1,7 +1,7 @@
 import React from 'react'
 import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles } from 'lucide-react'
 
-export default function AIComposer() {
+export default function AIWorkflows() {
   const features = [
     {
       icon: Workflow,
@@ -44,7 +44,7 @@ export default function AIComposer() {
             <Bot className="h-6 w-6 text-blue-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-100">AI Workflow Composer</h1>
+            <h1 className="text-2xl font-bold text-gray-100">AI Workflows</h1>
             <p className="text-gray-400">Coming Soon - Advanced AI-powered content generation pipelines</p>
           </div>
         </div>
