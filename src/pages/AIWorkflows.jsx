@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles } from 'lucide-react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus } from 'lucide-react'
 
 export default function AIWorkflows() {
   const features = [
@@ -39,18 +39,24 @@ export default function AIWorkflows() {
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-600/20 rounded-lg">
-            <Bot className="h-6 w-6 text-blue-400" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600/20 rounded-lg">
+              <Bot className="h-6 w-6 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-100">AI Workflows</h1>
+              <p className="text-gray-400">Advanced AI-powered content generation pipelines</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-100">AI Workflows</h1>
-            <p className="text-gray-400">Coming Soon - Advanced AI-powered content generation pipelines</p>
-          </div>
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+            <Plus className="h-4 w-4" />
+            Create Workflow
+          </button>
         </div>
       </div>
 
-      {/* Main Coming Soon Card */}
+      {/* Main Description Card */}
       <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-xl p-8 mb-8">
         <div className="text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600/20 rounded-full mb-4">
@@ -105,13 +111,6 @@ export default function AIWorkflows() {
         </div>
       </div>
 
-      {/* Status Badge */}
-      <div className="mt-8 text-center">
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-600/20 border border-yellow-600/30 rounded-full text-yellow-400 text-sm">
-          <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-          In Development - Coming Soon
-        </div>
-      </div>
     </div>
   )
 }

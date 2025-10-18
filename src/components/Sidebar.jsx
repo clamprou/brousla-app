@@ -17,11 +17,11 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
       </div>
 
       <div className="flex-1 space-y-4">
-        {/* Manual Generation group */}
+        {/* AI Workflows group */}
         <div>
-          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">Manual Generation</div>}
+          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">AI Workflows</div>}
           <div className="space-y-1">
-            {items.filter(i => i.group === 'manual').map(item => (
+            {items.filter(i => i.group === 'ai').map(item => (
               <SidebarItem
                 key={item.key}
                 icon={item.icon}
@@ -34,11 +34,11 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
           </div>
         </div>
 
-        {/* AI Workflows group */}
+        {/* Manual Generation group */}
         <div>
-          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">AI Workflows</div>}
+          {!collapsed && <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 font-medium">Manual Generation</div>}
           <div className="space-y-1">
-            {items.filter(i => i.group === 'ai').map(item => (
+            {items.filter(i => i.group === 'manual').map(item => (
               <SidebarItem
                 key={item.key}
                 icon={item.icon}

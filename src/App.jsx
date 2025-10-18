@@ -25,12 +25,12 @@ export default function App() {
   }, [])
 
   const items = useMemo(() => ([
+    // AI Workflows
+    { key: 'ai-composer', label: 'AI Workflows', icon: Bot, group: 'ai' },
     // Manual Generation (ordered: Text to Image, Image to Video, Text to Video)
     { key: 'text-to-image', label: 'Text to Image', icon: ImageIcon, group: 'manual' },
     { key: 'image-to-video', label: 'Image to Video', icon: Film, group: 'manual' },
     { key: 'text-to-video', label: 'Text to Video', icon: Type, group: 'manual' },
-    // AI Workflows
-    { key: 'ai-composer', label: 'AI Workflows', icon: Bot, group: 'ai' },
     // Settings
     { key: 'settings', label: 'Settings', icon: SettingsIcon, group: 'settings' }
   ]), [])
