@@ -1,37 +1,26 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock } from 'lucide-react'
+import { workflowManager } from '../utils/workflowManager.js'
 
 export default function AIWorkflows() {
-  // Mock data for workflows - in a real app this would come from state management or API
-  const [workflows] = useState([
-    {
-      id: '1',
-      name: 'Social Media Campaign',
-      description: 'Generate images and videos for social media posts',
-      status: 'active',
-      lastRun: '2024-01-15T10:30:00Z',
-      steps: 5,
-      category: 'Marketing'
-    },
-    {
-      id: '2',
-      name: 'Product Showcase',
-      description: 'Create product demonstration videos with music',
-      status: 'draft',
-      lastRun: null,
-      steps: 4,
-      category: 'E-commerce'
-    },
-    {
-      id: '3',
-      name: 'Educational Content',
-      description: 'Generate educational materials with visuals and narration',
-      status: 'active',
-      lastRun: '2024-01-14T15:45:00Z',
-      steps: 6,
-      category: 'Education'
+  const [workflows, setWorkflows] = useState([])
+
+  // Load workflows on component mount and listen for updates
+  useEffect(() => {
+    // Load initial workflows
+    setWorkflows(workflowManager.getWorkflows())
+
+    // Listen for workflow updates
+    const handleWorkflowsUpdate = (event) => {
+      setWorkflows(event.detail.workflows)
     }
-  ])
+
+    window.addEventListener('workflowsUpdated', handleWorkflowsUpdate)
+    
+    return () => {
+      window.removeEventListener('workflowsUpdated', handleWorkflowsUpdate)
+    }
+  }, [])
 
   const features = [
     {
@@ -69,6 +58,12 @@ export default function AIWorkflows() {
   const navigateToCreateWorkflow = () => {
     const ev = new CustomEvent('navigate', { detail: 'create-workflow' })
     window.dispatchEvent(ev)
+  }
+
+  const handleDeleteWorkflow = (workflowId) => {
+    if (confirm('Are you sure you want to delete this workflow?')) {
+      workflowManager.deleteWorkflow(workflowId)
+    }
   }
 
   return (
@@ -120,7 +115,7 @@ export default function AIWorkflows() {
                         {workflow.status}
                       </span>
                       <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded-full text-xs">
-                        {workflow.category}
+                        {workflow.numberOfClips} clips
                       </span>
                     </div>
                     <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
@@ -129,12 +124,13 @@ export default function AIWorkflows() {
                         <Workflow className="h-3 w-3" />
                         {workflow.steps} steps
                       </div>
-                      {workflow.lastRun && (
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Last run: {new Date(workflow.lastRun).toLocaleDateString()}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Created: {new Date(workflow.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span>Duration: {workflow.clipDuration}s</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
@@ -144,7 +140,11 @@ export default function AIWorkflows() {
                     <button className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" title="Edit Workflow">
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg transition-colors" title="Delete Workflow">
+                    <button 
+                      onClick={() => handleDeleteWorkflow(workflow.id)}
+                      className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg transition-colors" 
+                      title="Delete Workflow"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

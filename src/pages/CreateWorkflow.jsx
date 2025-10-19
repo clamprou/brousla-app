@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { ArrowLeft, Save, Bot, HelpCircle } from 'lucide-react'
 import ModelSelector from '../components/ModelSelector.jsx'
+import { workflowManager } from '../utils/workflowManager.js'
 
 export default function CreateWorkflow() {
   const [concept, setConcept] = useState('')
@@ -22,21 +23,27 @@ export default function CreateWorkflow() {
 
     setIsSaving(true)
     
-    // Mock save operation - replace with actual API call
-    setTimeout(() => {
-      console.log('Saving workflow:', {
-        concept,
+    try {
+      // Create the workflow using the workflow manager
+      const newWorkflow = workflowManager.addWorkflow({
+        concept: concept.trim(),
         clipDuration,
         numberOfClips,
         videoModel,
         imageModel
       })
-      setIsSaving(false)
+
+      console.log('Workflow created successfully:', newWorkflow)
       
       // Navigate back to AI Workflows page
       const ev = new CustomEvent('navigate', { detail: 'ai-composer' })
       window.dispatchEvent(ev)
-    }, 1000)
+    } catch (error) {
+      console.error('Error creating workflow:', error)
+      alert('Failed to create workflow. Please try again.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleBack = () => {
