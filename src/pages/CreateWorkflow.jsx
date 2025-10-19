@@ -10,14 +10,35 @@ export default function CreateWorkflow() {
   const [videoModel, setVideoModel] = useState('Wan2.1')
   const [imageModel, setImageModel] = useState('Flux Schnell')
   const [isSaving, setIsSaving] = useState(false)
+  const conceptTextareaRef = React.useRef(null)
 
   // Available models based on existing pages
   const videoModelOptions = ['Wan2.1', 'Wan2.2']
   const imageModelOptions = ['Flux Schnell', 'FLUX Schnell', 'Pika', 'RunwayML']
 
+  // Ensure clean state when component mounts
+  React.useEffect(() => {
+    // Reset any potential focus issues
+    document.body.style.overflow = 'unset'
+    
+    // Clean up any potential event listeners that might interfere
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [])
+
   const handleSave = async () => {
     if (!concept.trim()) {
-      alert('Please enter a concept for your workflow')
+      // Focus the concept textarea and show a visual indication
+      if (conceptTextareaRef.current) {
+        conceptTextareaRef.current.focus()
+        conceptTextareaRef.current.style.borderColor = '#ef4444'
+        setTimeout(() => {
+          if (conceptTextareaRef.current) {
+            conceptTextareaRef.current.style.borderColor = ''
+          }
+        }, 2000)
+      }
       return
     }
 
@@ -112,6 +133,7 @@ export default function CreateWorkflow() {
               </Tooltip>
             </div>
             <textarea
+              ref={conceptTextareaRef}
               value={concept}
               onChange={(e) => setConcept(e.target.value)}
               placeholder="e.g., A cinematic sequence showing the transformation of a caterpillar into a butterfly, with soft lighting and nature sounds..."

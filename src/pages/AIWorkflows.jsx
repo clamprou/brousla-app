@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
+import ConfirmationModal from '../components/ConfirmationModal.jsx'
 
 export default function AIWorkflows() {
   const [workflows, setWorkflows] = useState([])
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, workflowId: null, workflowName: '' })
 
   // Load workflows on component mount and listen for updates
   useEffect(() => {
@@ -60,10 +62,22 @@ export default function AIWorkflows() {
     window.dispatchEvent(ev)
   }
 
-  const handleDeleteWorkflow = (workflowId) => {
-    if (confirm('Are you sure you want to delete this workflow?')) {
-      workflowManager.deleteWorkflow(workflowId)
+  const handleDeleteWorkflow = (workflowId, workflowName) => {
+    setDeleteModal({
+      isOpen: true,
+      workflowId,
+      workflowName
+    })
+  }
+
+  const confirmDelete = () => {
+    if (deleteModal.workflowId) {
+      workflowManager.deleteWorkflow(deleteModal.workflowId)
     }
+  }
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, workflowId: null, workflowName: '' })
   }
 
   return (
@@ -141,7 +155,7 @@ export default function AIWorkflows() {
                       <Edit className="h-4 w-4" />
                     </button>
                     <button 
-                      onClick={() => handleDeleteWorkflow(workflow.id)}
+                      onClick={() => handleDeleteWorkflow(workflow.id, workflow.name)}
                       className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg transition-colors" 
                       title="Delete Workflow"
                     >
@@ -224,6 +238,18 @@ export default function AIWorkflows() {
           ))}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDelete}
+        title="Delete Workflow"
+        message={`Are you sure you want to delete "${deleteModal.workflowName}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
 
     </div>
   )
