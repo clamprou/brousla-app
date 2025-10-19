@@ -66,6 +66,11 @@ export default function AIWorkflows() {
     }
   ]
 
+  const navigateToCreateWorkflow = () => {
+    const ev = new CustomEvent('navigate', { detail: 'create-workflow' })
+    window.dispatchEvent(ev)
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -80,7 +85,10 @@ export default function AIWorkflows() {
               <p className="text-gray-400">Advanced AI-powered content generation pipelines</p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+          <button 
+            onClick={navigateToCreateWorkflow}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+          >
             <Plus className="h-4 w-4" />
             Create Workflow
           </button>
@@ -151,7 +159,10 @@ export default function AIWorkflows() {
             </div>
             <h4 className="text-gray-300 font-medium mb-2">No workflows yet</h4>
             <p className="text-gray-500 text-sm mb-4">Create your first workflow to get started with AI-powered content generation</p>
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+            <button 
+              onClick={navigateToCreateWorkflow}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+            >
               <Plus className="h-4 w-4" />
               Create Your First Workflow
             </button>

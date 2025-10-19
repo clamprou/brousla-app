@@ -7,6 +7,7 @@ import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
 import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
 import AIWorkflows from './pages/AIWorkflows.jsx'
+import CreateWorkflow from './pages/CreateWorkflow.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -45,6 +46,8 @@ export default function App() {
         return <TextToVideo />
       case 'ai-composer':
         return <AIWorkflows />
+      case 'create-workflow':
+        return <CreateWorkflow />
       case 'settings':
         return <Settings />
       default:
