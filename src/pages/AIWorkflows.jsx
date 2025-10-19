@@ -1,7 +1,38 @@
-import React from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus } from 'lucide-react'
+import React, { useState } from 'react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock } from 'lucide-react'
 
 export default function AIWorkflows() {
+  // Mock data for workflows - in a real app this would come from state management or API
+  const [workflows] = useState([
+    {
+      id: '1',
+      name: 'Social Media Campaign',
+      description: 'Generate images and videos for social media posts',
+      status: 'active',
+      lastRun: '2024-01-15T10:30:00Z',
+      steps: 5,
+      category: 'Marketing'
+    },
+    {
+      id: '2',
+      name: 'Product Showcase',
+      description: 'Create product demonstration videos with music',
+      status: 'draft',
+      lastRun: null,
+      steps: 4,
+      category: 'E-commerce'
+    },
+    {
+      id: '3',
+      name: 'Educational Content',
+      description: 'Generate educational materials with visuals and narration',
+      status: 'active',
+      lastRun: '2024-01-14T15:45:00Z',
+      steps: 6,
+      category: 'Education'
+    }
+  ])
+
   const features = [
     {
       icon: Workflow,
@@ -54,6 +85,78 @@ export default function AIWorkflows() {
             Create Workflow
           </button>
         </div>
+      </div>
+
+      {/* Workflows List */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-200">Your Workflows</h3>
+          <div className="text-sm text-gray-400">
+            {workflows.length} workflow{workflows.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+        
+        {workflows.length > 0 ? (
+          <div className="space-y-3">
+            {workflows.map((workflow) => (
+              <div key={workflow.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:bg-gray-750 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h4 className="font-medium text-gray-200">{workflow.name}</h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        workflow.status === 'active' 
+                          ? 'bg-green-600/20 text-green-400 border border-green-600/30' 
+                          : 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30'
+                      }`}>
+                        {workflow.status}
+                      </span>
+                      <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded-full text-xs">
+                        {workflow.category}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
+                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Workflow className="h-3 w-3" />
+                        {workflow.steps} steps
+                      </div>
+                      {workflow.lastRun && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Last run: {new Date(workflow.lastRun).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-4">
+                    <button className="p-2 text-gray-400 hover:text-blue-400 hover:bg-blue-600/20 rounded-lg transition-colors" title="Run Workflow">
+                      <Play className="h-4 w-4" />
+                    </button>
+                    <button className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" title="Edit Workflow">
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg transition-colors" title="Delete Workflow">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-800 rounded-full mb-4">
+              <Workflow className="h-6 w-6 text-gray-500" />
+            </div>
+            <h4 className="text-gray-300 font-medium mb-2">No workflows yet</h4>
+            <p className="text-gray-500 text-sm mb-4">Create your first workflow to get started with AI-powered content generation</p>
+            <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+              <Plus className="h-4 w-4" />
+              Create Your First Workflow
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Description Card */}
