@@ -31,7 +31,17 @@ export default function Settings() {
         const result = await window.electronAPI.selectFolder()
         if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
           const selectedPath = result.filePaths[0]
-          settingsManager.setComfyUIPath(selectedPath)
+          
+          // Validate the selected folder
+          const validationResult = await window.electronAPI.validateComfyUIFolder(selectedPath)
+          
+          // Only set the path if validation passes
+          if (validationResult.isValid) {
+            settingsManager.setComfyUIPath(selectedPath, validationResult)
+          } else {
+            // Show error message for invalid folder
+            alert(`Invalid ComfyUI folder: ${validationResult.message}`)
+          }
         }
       } else {
         // Fallback for web version - use input with directory attribute
@@ -45,7 +55,12 @@ export default function Settings() {
           if (files && files.length > 0) {
             // Get the directory path from the first file
             const path = files[0].webkitRelativePath.split('/')[0]
-            settingsManager.setComfyUIPath(path)
+            // For web version, we can't validate the folder structure
+            // So we'll just set it and let the user know validation isn't available
+            settingsManager.setComfyUIPath(path, {
+              isValid: true,
+              message: 'Folder selected (validation not available in web version)'
+            })
           }
         }
         
@@ -59,14 +74,23 @@ export default function Settings() {
   }
 
   const getComfyUIStatus = () => {
-    if (settings.comfyuiPath) {
+    if (settings.comfyuiPath && settings.comfyuiValidation && settings.comfyuiValidation.isValid) {
       return {
         status: 'connected',
         icon: CheckCircle,
         color: 'text-green-400',
         bgColor: 'bg-green-600/20',
         borderColor: 'border-green-600/30',
-        message: 'ComfyUI folder configured'
+        message: 'ComfyUI folder configured and validated'
+      }
+    } else if (settings.comfyuiPath) {
+      return {
+        status: 'configured_but_invalid',
+        icon: AlertCircle,
+        color: 'text-red-400',
+        bgColor: 'bg-red-600/20',
+        borderColor: 'border-red-600/30',
+        message: 'ComfyUI folder configured but validation failed'
       }
     } else {
       return {
@@ -139,7 +163,7 @@ export default function Settings() {
             
             {settings.comfyuiPath && (
               <button
-                onClick={() => settingsManager.setComfyUIPath(null)}
+                onClick={() => settingsManager.setComfyUIPath(null, null)}
                 className="px-3 py-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg font-medium transition-colors"
               >
                 Clear
@@ -153,8 +177,9 @@ export default function Settings() {
             <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
               <li>Download and install ComfyUI on your system</li>
               <li>Click "Select ComfyUI Folder" and choose the main ComfyUI directory</li>
+              <li>The folder will be automatically validated for required files (main.py and comfy folder)</li>
+              <li>Only valid ComfyUI installations will be accepted</li>
               <li>The application will use this path to start ComfyUI in the background when needed</li>
-              <li>Make sure ComfyUI is properly installed and contains all necessary files</li>
             </ol>
           </div>
         </div>

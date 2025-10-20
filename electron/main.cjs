@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const path = require('path')
-const { existsSync } = require('fs')
+const { existsSync, statSync } = require('fs')
 const { spawn } = require('child_process')
 
 let mainWindow = null
@@ -100,6 +100,74 @@ ipcMain.handle('dialog:selectFolder', async () => {
     buttonLabel: 'Select Folder'
   })
   return result
+})
+
+// ComfyUI folder validation handler
+ipcMain.handle('comfyui:validateFolder', async (event, folderPath) => {
+  try {
+    if (!folderPath || typeof folderPath !== 'string') {
+      return {
+        isValid: false,
+        missingItems: ['Invalid folder path'],
+        message: 'Invalid folder path provided'
+      }
+    }
+
+    // Check if the folder exists
+    if (!existsSync(folderPath)) {
+      return {
+        isValid: false,
+        missingItems: ['Folder does not exist'],
+        message: 'Selected folder does not exist'
+      }
+    }
+
+    // Check if it's actually a directory
+    const stats = statSync(folderPath)
+    if (!stats.isDirectory()) {
+      return {
+        isValid: false,
+        missingItems: ['Not a directory'],
+        message: 'Selected path is not a directory'
+      }
+    }
+
+    const missingItems = []
+    
+    // Check for main.py
+    const mainPyPath = path.join(folderPath, 'main.py')
+    if (!existsSync(mainPyPath)) {
+      missingItems.push('main.py')
+    }
+
+    // Check for comfy folder
+    const comfyPath = path.join(folderPath, 'comfy')
+    if (!existsSync(comfyPath)) {
+      missingItems.push('comfy folder')
+    }
+
+    if (missingItems.length > 0) {
+      return {
+        isValid: false,
+        missingItems: missingItems,
+        message: `Missing required ComfyUI files: ${missingItems.join(', ')}`
+      }
+    }
+
+    return {
+      isValid: true,
+      missingItems: [],
+      message: 'ComfyUI folder validation passed'
+    }
+
+  } catch (error) {
+    console.error('Error validating ComfyUI folder:', error)
+    return {
+      isValid: false,
+      missingItems: ['Validation error'],
+      message: `Error validating ComfyUI folder: ${error.message}`
+    }
+  }
 })
 
 

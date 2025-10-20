@@ -3,6 +3,7 @@ class SettingsManager {
   constructor() {
     this.settings = {
       comfyuiPath: null,
+      comfyuiValidation: null, // Stores validation result
       comfyuiServer: 'http://localhost:8188',
       openaiApiKey: null,
       defaultWorkflow: null
@@ -29,8 +30,19 @@ class SettingsManager {
     }
   }
 
-  setComfyUIPath(path) {
+  setComfyUIPath(path, validationResult = null) {
     this.settings.comfyuiPath = path
+    this.settings.comfyuiValidation = validationResult
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+
+  setComfyUIValidation(validationResult) {
+    this.settings.comfyuiValidation = validationResult
     this.saveToStorage()
     
     // Dispatch event to notify components
