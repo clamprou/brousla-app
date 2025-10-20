@@ -80,6 +80,14 @@ export default function AIWorkflows() {
     setDeleteModal({ isOpen: false, workflowId: null, workflowName: '' })
   }
 
+  const handleEditWorkflow = (workflowId) => {
+    // Set the editing workflow ID in global state
+    window.editingWorkflowId = workflowId
+    // Navigate to CreateWorkflow page
+    const ev = new CustomEvent('navigate', { detail: 'create-workflow' })
+    window.dispatchEvent(ev)
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -151,7 +159,11 @@ export default function AIWorkflows() {
                     <button className="p-2 text-gray-400 hover:text-blue-400 hover:bg-blue-600/20 rounded-lg transition-colors" title="Run Workflow">
                       <Play className="h-4 w-4" />
                     </button>
-                    <button className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" title="Edit Workflow">
+                    <button 
+                      onClick={() => handleEditWorkflow(workflow.id)}
+                      className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" 
+                      title="Edit Workflow"
+                    >
                       <Edit className="h-4 w-4" />
                     </button>
                     <button 

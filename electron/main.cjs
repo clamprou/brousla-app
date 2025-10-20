@@ -92,4 +92,14 @@ ipcMain.handle('window:close', () => {
   }
 })
 
+// Folder selection handler
+ipcMain.handle('dialog:selectFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select ComfyUI Folder',
+    buttonLabel: 'Select Folder'
+  })
+  return result
+})
+
 

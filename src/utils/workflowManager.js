@@ -28,8 +28,8 @@ class WorkflowManager {
   addWorkflow(workflowData) {
     const newWorkflow = {
       id: Date.now().toString(),
-      name: this.generateWorkflowName(workflowData.concept),
-      description: workflowData.concept,
+      name: workflowData.name || this.generateWorkflowName(workflowData.concept),
+      description: workflowData.description || workflowData.concept,
       concept: workflowData.concept,
       clipDuration: workflowData.clipDuration,
       numberOfClips: workflowData.numberOfClips,
@@ -38,6 +38,7 @@ class WorkflowManager {
       status: 'draft',
       lastRun: null,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       steps: 2 // Basic workflow: generate images + create videos
     }
 
@@ -58,6 +59,34 @@ class WorkflowManager {
     return words.join(' ') + (words.length < 4 ? ' Workflow' : '')
   }
 
+  updateWorkflow(id, workflowData) {
+    const workflowIndex = this.workflows.findIndex(w => w.id === id)
+    if (workflowIndex === -1) return null
+
+    const existingWorkflow = this.workflows[workflowIndex]
+    const updatedWorkflow = {
+      ...existingWorkflow,
+      name: workflowData.name || existingWorkflow.name,
+      description: workflowData.description || workflowData.concept || existingWorkflow.description,
+      concept: workflowData.concept || existingWorkflow.concept,
+      clipDuration: workflowData.clipDuration || existingWorkflow.clipDuration,
+      numberOfClips: workflowData.numberOfClips || existingWorkflow.numberOfClips,
+      videoModel: workflowData.videoModel || existingWorkflow.videoModel,
+      imageModel: workflowData.imageModel || existingWorkflow.imageModel,
+      updatedAt: new Date().toISOString()
+    }
+
+    this.workflows[workflowIndex] = updatedWorkflow
+    this.saveToStorage()
+    
+    // Dispatch event to notify other components
+    window.dispatchEvent(new CustomEvent('workflowsUpdated', { 
+      detail: { workflows: [...this.workflows] } 
+    }))
+
+    return updatedWorkflow
+  }
+
   deleteWorkflow(id) {
     this.workflows = this.workflows.filter(w => w.id !== id)
     this.saveToStorage()
@@ -70,6 +99,10 @@ class WorkflowManager {
 
   getWorkflows() {
     return [...this.workflows]
+  }
+
+  getWorkflowById(id) {
+    return this.workflows.find(w => w.id === id)
   }
 }
 

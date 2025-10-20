@@ -4,22 +4,43 @@ import ModelSelector from '../components/ModelSelector.jsx'
 import { workflowManager } from '../utils/workflowManager.js'
 
 export default function CreateWorkflow() {
+  const [name, setName] = useState('')
   const [concept, setConcept] = useState('')
   const [clipDuration, setClipDuration] = useState(5)
   const [numberOfClips, setNumberOfClips] = useState(1)
   const [videoModel, setVideoModel] = useState('Wan2.1')
   const [imageModel, setImageModel] = useState('Flux Schnell')
   const [isSaving, setIsSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingWorkflowId, setEditingWorkflowId] = useState(null)
   const conceptTextareaRef = React.useRef(null)
 
   // Available models based on existing pages
   const videoModelOptions = ['Wan2.1', 'Wan2.2']
   const imageModelOptions = ['Flux Schnell', 'FLUX Schnell', 'Pika', 'RunwayML']
 
-  // Ensure clean state when component mounts
+  // Load workflow data if editing
   React.useEffect(() => {
     // Reset any potential focus issues
     document.body.style.overflow = 'unset'
+    
+    // Check if we're editing a workflow (check global edit state)
+    const editWorkflowId = window.editingWorkflowId
+    if (editWorkflowId) {
+      const workflow = workflowManager.getWorkflowById(editWorkflowId)
+      if (workflow) {
+        setIsEditing(true)
+        setEditingWorkflowId(editWorkflowId)
+        setName(workflow.name || '')
+        setConcept(workflow.concept || '')
+        setClipDuration(workflow.clipDuration || 5)
+        setNumberOfClips(workflow.numberOfClips || 1)
+        setVideoModel(workflow.videoModel || 'Wan2.1')
+        setImageModel(workflow.imageModel || 'Flux Schnell')
+      }
+      // Clear the edit state after loading
+      window.editingWorkflowId = null
+    }
     
     // Clean up any potential event listeners that might interfere
     return () => {
@@ -28,6 +49,11 @@ export default function CreateWorkflow() {
   }, [])
 
   const handleSave = async () => {
+    if (!name.trim()) {
+      alert('Please enter a name for your workflow')
+      return
+    }
+    
     if (!concept.trim()) {
       // Focus the concept textarea and show a visual indication
       if (conceptTextareaRef.current) {
@@ -45,23 +71,32 @@ export default function CreateWorkflow() {
     setIsSaving(true)
     
     try {
-      // Create the workflow using the workflow manager
-      const newWorkflow = workflowManager.addWorkflow({
+      const workflowData = {
+        name: name.trim(),
         concept: concept.trim(),
         clipDuration,
         numberOfClips,
         videoModel,
         imageModel
-      })
+      }
 
-      console.log('Workflow created successfully:', newWorkflow)
+      let result
+      if (isEditing && editingWorkflowId) {
+        // Update existing workflow
+        result = workflowManager.updateWorkflow(editingWorkflowId, workflowData)
+        console.log('Workflow updated successfully:', result)
+      } else {
+        // Create new workflow
+        result = workflowManager.addWorkflow(workflowData)
+        console.log('Workflow created successfully:', result)
+      }
       
       // Navigate back to AI Workflows page
       const ev = new CustomEvent('navigate', { detail: 'ai-composer' })
       window.dispatchEvent(ev)
     } catch (error) {
-      console.error('Error creating workflow:', error)
-      alert('Failed to create workflow. Please try again.')
+      console.error('Error saving workflow:', error)
+      alert('Failed to save workflow. Please try again.')
     } finally {
       setIsSaving(false)
     }
@@ -112,8 +147,12 @@ export default function CreateWorkflow() {
               <Bot className="h-6 w-6 text-blue-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-100">Create New Workflow</h1>
-              <p className="text-gray-400">Design a new AI-powered content generation workflow</p>
+              <h1 className="text-2xl font-bold text-gray-100">
+                {isEditing ? 'Edit Workflow' : 'Create New Workflow'}
+              </h1>
+              <p className="text-gray-400">
+                {isEditing ? 'Modify your AI-powered content generation workflow' : 'Design a new AI-powered content generation workflow'}
+              </p>
             </div>
           </div>
         </div>
@@ -122,6 +161,25 @@ export default function CreateWorkflow() {
       {/* Form */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <div className="space-y-6">
+          {/* Name Field */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-200">
+                Name
+              </label>
+              <Tooltip content="Give your workflow a descriptive name">
+                <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
+              </Tooltip>
+            </div>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Social Media Campaign Workflow"
+              className="w-full rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            />
+          </div>
+
           {/* Concept Field */}
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -243,7 +301,7 @@ export default function CreateWorkflow() {
             ) : (
               <>
                 <Save className="h-4 w-4" />
-                Create Workflow
+                {isEditing ? 'Update Workflow' : 'Create Workflow'}
               </>
             )}
           </button>
