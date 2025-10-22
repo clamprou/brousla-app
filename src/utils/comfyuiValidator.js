@@ -2,7 +2,7 @@
 class ComfyUIValidator {
   constructor() {
     this.requiredFiles = ['main.py']
-    this.requiredFolders = ['comfy']
+    this.requiredFolders = ['ComfyUI']
   }
 
   /**
@@ -46,7 +46,7 @@ class ComfyUIValidator {
     return {
       requiredFiles: this.requiredFiles,
       requiredFolders: this.requiredFolders,
-      description: 'A valid ComfyUI installation requires main.py and comfy folder'
+      description: 'A valid ComfyUI installation requires ComfyUI folder with main.py file inside'
     }
   }
 }

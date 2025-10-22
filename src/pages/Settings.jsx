@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { Settings as SettingsIcon, FolderOpen, CheckCircle, AlertCircle, Server } from 'lucide-react'
 import { settingsManager } from '../utils/settingsManager.js'
+import ErrorModal from '../components/ErrorModal.jsx'
 
 export default function Settings() {
   const [settings, setSettings] = useState({})
   const [isSelectingFolder, setIsSelectingFolder] = useState(false)
+  const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
 
   useEffect(() => {
     // Load initial settings
@@ -39,8 +41,12 @@ export default function Settings() {
           if (validationResult.isValid) {
             settingsManager.setComfyUIPath(selectedPath, validationResult)
           } else {
-            // Show error message for invalid folder
-            alert(`Invalid ComfyUI folder: ${validationResult.message}`)
+            // Show styled error modal for invalid folder
+            setErrorModal({
+              isOpen: true,
+              title: 'Invalid ComfyUI Folder',
+              message: validationResult.message
+            })
           }
         }
       } else {
@@ -176,14 +182,22 @@ export default function Settings() {
             <h4 className="text-sm font-medium text-gray-300 mb-2">How to set up ComfyUI:</h4>
             <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
               <li>Download and install ComfyUI on your system</li>
-              <li>Click "Select ComfyUI Folder" and choose the main ComfyUI directory</li>
-              <li>The folder will be automatically validated for required files (main.py and comfy folder)</li>
+              <li>Click "Select ComfyUI Folder" and choose the parent directory containing the ComfyUI folder</li>
+              <li>The folder will be automatically validated for the ComfyUI subfolder and main.py file</li>
               <li>Only valid ComfyUI installations will be accepted</li>
               <li>The application will use this path to start ComfyUI in the background when needed</li>
             </ol>
           </div>
         </div>
       </div>
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, title: '', message: '' })}
+        title={errorModal.title}
+        message={errorModal.message}
+      />
 
     </div>
   )

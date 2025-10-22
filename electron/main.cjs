@@ -132,25 +132,25 @@ ipcMain.handle('comfyui:validateFolder', async (event, folderPath) => {
       }
     }
 
-    const missingItems = []
+    // Check for main.py inside ComfyUI subfolder
+    const comfyUIPath = path.join(folderPath, 'ComfyUI')
+    const mainPyPath = path.join(comfyUIPath, 'main.py')
     
-    // Check for main.py
-    const mainPyPath = path.join(folderPath, 'main.py')
-    if (!existsSync(mainPyPath)) {
-      missingItems.push('main.py')
-    }
-
-    // Check for comfy folder
-    const comfyPath = path.join(folderPath, 'comfy')
-    if (!existsSync(comfyPath)) {
-      missingItems.push('comfy folder')
-    }
-
-    if (missingItems.length > 0) {
+    // First check if ComfyUI folder exists
+    if (!existsSync(comfyUIPath)) {
       return {
         isValid: false,
-        missingItems: missingItems,
-        message: `Missing required ComfyUI files: ${missingItems.join(', ')}`
+        missingItems: ['ComfyUI folder'],
+        message: 'ComfyUI folder not found in selected directory'
+      }
+    }
+    
+    // Then check if main.py exists inside ComfyUI folder
+    if (!existsSync(mainPyPath)) {
+      return {
+        isValid: false,
+        missingItems: ['main.py'],
+        message: 'main.py file not found in ComfyUI folder'
       }
     }
 
