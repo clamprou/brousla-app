@@ -33,8 +33,8 @@ class WorkflowManager {
       concept: workflowData.concept,
       clipDuration: workflowData.clipDuration,
       numberOfClips: workflowData.numberOfClips,
-      videoModel: workflowData.videoModel,
-      imageModel: workflowData.imageModel,
+      videoWorkflowFile: workflowData.videoWorkflowFile,
+      imageWorkflowFile: workflowData.imageWorkflowFile,
       status: 'draft',
       lastRun: null,
       createdAt: new Date().toISOString(),
@@ -71,8 +71,8 @@ class WorkflowManager {
       concept: workflowData.concept || existingWorkflow.concept,
       clipDuration: workflowData.clipDuration || existingWorkflow.clipDuration,
       numberOfClips: workflowData.numberOfClips || existingWorkflow.numberOfClips,
-      videoModel: workflowData.videoModel || existingWorkflow.videoModel,
-      imageModel: workflowData.imageModel || existingWorkflow.imageModel,
+      videoWorkflowFile: workflowData.videoWorkflowFile || existingWorkflow.videoWorkflowFile,
+      imageWorkflowFile: workflowData.imageWorkflowFile || existingWorkflow.imageWorkflowFile,
       updatedAt: new Date().toISOString()
     }
 

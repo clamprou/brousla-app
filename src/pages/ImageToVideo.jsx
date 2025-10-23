@@ -1,6 +1,6 @@
 import React from 'react'
 import { Upload, Settings as SettingsIcon, ChevronDown, ChevronRight, Loader2, Download, RotateCcw, ArrowRight } from 'lucide-react'
-import ModelSelector from '../components/ModelSelector.jsx'
+import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 
 export default function ImageToVideo() {
   const [selectedImage, setSelectedImage] = React.useState(null)
@@ -11,7 +11,7 @@ export default function ImageToVideo() {
   const [showAdvanced, setShowAdvanced] = React.useState(false)
   const [durationSec, setDurationSec] = React.useState(5)
   const [motionStrength, setMotionStrength] = React.useState(50)
-  const [model, setModel] = React.useState('Wan2.1')
+  const [workflowFile, setWorkflowFile] = React.useState(null)
   const [fps, setFps] = React.useState(24)
   const [videoUrl, setVideoUrl] = React.useState('')
 
@@ -49,25 +49,58 @@ export default function ImageToVideo() {
     handleFiles(e.dataTransfer.files)
   }
 
-  const startGeneration = () => {
+  const startGeneration = async () => {
+    if (!selectedImage || !workflowFile) return
     setIsGenerating(true)
     setProgress(0)
     setVideoUrl('')
 
-    // Mock progress animation for ~3 seconds total
-    const start = Date.now()
-    const durationMs = 3000
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - start
-      const pct = Math.min(100, Math.round((elapsed / durationMs) * 100))
-      setProgress(pct)
-      if (elapsed >= durationMs) {
-        clearInterval(interval)
-        // Mock result
-        setVideoUrl('/sample.mp4')
-        setIsGenerating(false)
+    try {
+      // Create FormData for the API call
+      const formData = new FormData()
+      
+      // Create a Blob from the workflow JSON
+      const workflowBlob = new Blob([JSON.stringify(workflowFile.json)], { type: 'application/json' })
+      formData.append('workflow_file', workflowBlob, workflowFile.fileName)
+      
+      // Add the selected image
+      formData.append('image_file', selectedImage)
+      
+      // Get ComfyUI URL from preferences (default to localhost)
+      const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
+      const comfyuiUrl = prefs.comfyUiServer || 'http://127.0.0.1:8188'
+      formData.append('comfyui_url', comfyuiUrl)
+      
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => Math.min(prev + 5, 90))
+      }, 2000)
+      
+      // Call the backend API
+      const response = await fetch('http://127.0.0.1:8000/generate_image_to_video', {
+        method: 'POST',
+        body: formData
+      })
+      
+      clearInterval(progressInterval)
+      setProgress(100)
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        // Convert the result path to a URL that can be displayed
+        const videoUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(result.resultPath)}`
+        setVideoUrl(videoUrl)
+      } else {
+        console.error('Generation failed:', result.error)
+        alert(`Generation failed: ${result.message}`)
       }
-    }, 80)
+    } catch (error) {
+      console.error('Error generating video:', error)
+      alert('Failed to generate video. Please check your ComfyUI server connection.')
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   const onDownload = () => {
@@ -85,7 +118,7 @@ export default function ImageToVideo() {
       <div className="mb-4">
         <h2 className="text-gray-200 text-base font-semibold">Image to Video</h2>
         <div className="mt-2">
-          <ModelSelector value={model} onChange={setModel} options={["Wan2.1", "Wan2.2"]} />
+          <WorkflowFileUpload value={workflowFile} onChange={setWorkflowFile} />
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -202,10 +235,10 @@ export default function ImageToVideo() {
           <div className="flex items-center gap-3">
             <button
               onClick={startGeneration}
-              disabled={isGenerating}
+              disabled={isGenerating || !selectedImage || !workflowFile}
               className={[
                 'px-4 py-2 rounded-lg font-medium transition-colors',
-                isGenerating ? 'bg-gray-700 text-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
+                isGenerating || !selectedImage || !workflowFile ? 'bg-gray-700 text-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
               ].join(' ')}
             >
               {isGenerating ? (

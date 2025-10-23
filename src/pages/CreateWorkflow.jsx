@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { ArrowLeft, Save, Bot, HelpCircle } from 'lucide-react'
-import ModelSelector from '../components/ModelSelector.jsx'
+import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 import { workflowManager } from '../utils/workflowManager.js'
 
 export default function CreateWorkflow() {
@@ -8,16 +8,13 @@ export default function CreateWorkflow() {
   const [concept, setConcept] = useState('')
   const [clipDuration, setClipDuration] = useState(5)
   const [numberOfClips, setNumberOfClips] = useState(1)
-  const [videoModel, setVideoModel] = useState('Wan2.1')
-  const [imageModel, setImageModel] = useState('Flux Schnell')
+  const [videoWorkflowFile, setVideoWorkflowFile] = useState(null)
+  const [imageWorkflowFile, setImageWorkflowFile] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingWorkflowId, setEditingWorkflowId] = useState(null)
   const conceptTextareaRef = React.useRef(null)
 
-  // Available models based on existing pages
-  const videoModelOptions = ['Wan2.1', 'Wan2.2']
-  const imageModelOptions = ['Flux Schnell', 'FLUX Schnell', 'Pika', 'RunwayML']
 
   // Load workflow data if editing
   React.useEffect(() => {
@@ -35,8 +32,8 @@ export default function CreateWorkflow() {
         setConcept(workflow.concept || '')
         setClipDuration(workflow.clipDuration || 5)
         setNumberOfClips(workflow.numberOfClips || 1)
-        setVideoModel(workflow.videoModel || 'Wan2.1')
-        setImageModel(workflow.imageModel || 'Flux Schnell')
+        setVideoWorkflowFile(workflow.videoWorkflowFile || null)
+        setImageWorkflowFile(workflow.imageWorkflowFile || null)
       }
       // Clear the edit state after loading
       window.editingWorkflowId = null
@@ -76,8 +73,8 @@ export default function CreateWorkflow() {
         concept: concept.trim(),
         clipDuration,
         numberOfClips,
-        videoModel,
-        imageModel
+        videoWorkflowFile,
+        imageWorkflowFile
       }
 
       let result
@@ -255,10 +252,10 @@ export default function CreateWorkflow() {
                 <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
               </Tooltip>
             </div>
-            <ModelSelector
-              value={videoModel}
-              onChange={setVideoModel}
-              options={videoModelOptions}
+            <WorkflowFileUpload
+              value={videoWorkflowFile}
+              onChange={setVideoWorkflowFile}
+              label="Video Workflow"
             />
           </div>
 
@@ -272,10 +269,10 @@ export default function CreateWorkflow() {
                 <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
               </Tooltip>
             </div>
-            <ModelSelector
-              value={imageModel}
-              onChange={setImageModel}
-              options={imageModelOptions}
+            <WorkflowFileUpload
+              value={imageWorkflowFile}
+              onChange={setImageWorkflowFile}
+              label="Image Workflow"
             />
           </div>
         </div>

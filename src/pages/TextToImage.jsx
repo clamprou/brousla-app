@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import ModelSelector from '../components/ModelSelector.jsx'
+import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 
 export default function TextToImage() {
   const [prompt, setPrompt] = useState('')
@@ -7,7 +7,7 @@ export default function TextToImage() {
   const [imageUrl, setImageUrl] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  const [model, setModel] = useState('Flux Schnell')
+  const [workflowFile, setWorkflowFile] = useState(null)
   const [imageSize, setImageSize] = useState('768x768')
   const [numSteps, setNumSteps] = useState(25)
   const [cfgScale, setCfgScale] = useState(7.5)
@@ -18,19 +18,48 @@ export default function TextToImage() {
     '1024x1024'
   ], [])
 
-  const startGeneration = useCallback(() => {
-    if (!prompt.trim()) return
+  const startGeneration = useCallback(async () => {
+    if (!prompt.trim() || !workflowFile) return
     setIsGenerating(true)
     setImageUrl('')
-    // Mock API call with delay; swap with real backend call later
-    setTimeout(() => {
-      // Use a deterministic placeholder based on settings to avoid caching artifacts
-      const size = imageSize.split('x')[0]
-      const demoUrl = `https://picsum.photos/seed/${encodeURIComponent(prompt)}-${size}/${size}`
-      setImageUrl(demoUrl)
+    
+    try {
+      // Create FormData for the API call
+      const formData = new FormData()
+      
+      // Create a Blob from the workflow JSON
+      const workflowBlob = new Blob([JSON.stringify(workflowFile.json)], { type: 'application/json' })
+      formData.append('workflow_file', workflowBlob, workflowFile.fileName)
+      formData.append('prompt', prompt.trim())
+      
+      // Get ComfyUI URL from preferences (default to localhost)
+      const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
+      const comfyuiUrl = prefs.comfyUiServer || 'http://127.0.0.1:8188'
+      formData.append('comfyui_url', comfyuiUrl)
+      
+      // Call the backend API
+      const response = await fetch('http://127.0.0.1:8000/generate_image', {
+        method: 'POST',
+        body: formData
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        // Convert the result path to a URL that can be displayed
+        const imageUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(result.resultPath)}`
+        setImageUrl(imageUrl)
+      } else {
+        console.error('Generation failed:', result.error)
+        alert(`Generation failed: ${result.message}`)
+      }
+    } catch (error) {
+      console.error('Error generating image:', error)
+      alert('Failed to generate image. Please check your ComfyUI server connection.')
+    } finally {
       setIsGenerating(false)
-    }, 2000)
-  }, [prompt, imageSize])
+    }
+  }, [prompt, workflowFile])
 
   const handleDownload = useCallback(async () => {
     if (!imageUrl) return
@@ -60,7 +89,7 @@ export default function TextToImage() {
       <div className="mb-4">
         <h2 className="text-gray-200 text-base font-semibold">Text to Image</h2>
         <div className="mt-2">
-          <ModelSelector value={model} onChange={setModel} options={["Flux Schnell", "HiDream"]} />
+          <WorkflowFileUpload value={workflowFile} onChange={setWorkflowFile} />
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
@@ -76,9 +105,9 @@ export default function TextToImage() {
 
           <button
             onClick={startGeneration}
-            disabled={isGenerating || !prompt.trim()}
+            disabled={isGenerating || !prompt.trim() || !workflowFile}
             className={`mt-4 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors
-              ${isGenerating || !prompt.trim() ? 'bg-indigo-700/50 text-gray-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+              ${isGenerating || !prompt.trim() || !workflowFile ? 'bg-indigo-700/50 text-gray-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
           >
             {isGenerating && (
               <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

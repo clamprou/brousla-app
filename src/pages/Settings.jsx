@@ -6,11 +6,18 @@ import ErrorModal from '../components/ErrorModal.jsx'
 export default function Settings() {
   const [settings, setSettings] = useState({})
   const [isSelectingFolder, setIsSelectingFolder] = useState(false)
+  const [comfyuiServerUrl, setComfyuiServerUrl] = useState('http://127.0.0.1:8188')
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
 
   useEffect(() => {
     // Load initial settings
     setSettings(settingsManager.getSettings())
+    
+    // Load ComfyUI server URL from localStorage
+    const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
+    if (prefs.comfyUiServer) {
+      setComfyuiServerUrl(prefs.comfyUiServer)
+    }
 
     // Listen for settings updates
     const handleSettingsUpdate = (event) => {
@@ -23,6 +30,14 @@ export default function Settings() {
       window.removeEventListener('settingsUpdated', handleSettingsUpdate)
     }
   }, [])
+
+  const handleComfyuiServerUrlChange = (url) => {
+    setComfyuiServerUrl(url)
+    // Save to localStorage
+    const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
+    prefs.comfyUiServer = url
+    localStorage.setItem('userPreferences', JSON.stringify(prefs))
+  }
 
   const handleSelectComfyUIFolder = async () => {
     setIsSelectingFolder(true)
@@ -154,6 +169,31 @@ export default function Settings() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* ComfyUI Server URL */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-300">
+              ComfyUI Server URL
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="url"
+                value={comfyuiServerUrl}
+                onChange={(e) => handleComfyuiServerUrlChange(e.target.value)}
+                placeholder="http://127.0.0.1:8188"
+                className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+              <button
+                onClick={() => handleComfyuiServerUrlChange('http://127.0.0.1:8188')}
+                className="px-3 py-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg font-medium transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">
+              The URL where your ComfyUI server is running. Default is localhost:8188.
+            </p>
           </div>
 
           {/* Folder Selection Button */}
