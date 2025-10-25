@@ -12,6 +12,8 @@ export default function ImageToVideo() {
   const [durationSec, setDurationSec] = React.useState(5)
   const [motionStrength, setMotionStrength] = React.useState(50)
   const [workflowFile, setWorkflowFile] = React.useState(null)
+  const [promptId, setPromptId] = React.useState(null)
+  const [statusMessage, setStatusMessage] = React.useState('')
   const [fps, setFps] = React.useState(24)
   const [videoUrl, setVideoUrl] = React.useState('')
 
@@ -54,6 +56,8 @@ export default function ImageToVideo() {
     setIsGenerating(true)
     setProgress(0)
     setVideoUrl('')
+    setPromptId(null)
+    setStatusMessage('Starting generation...')
 
     try {
       // Create FormData for the API call
@@ -71,36 +75,85 @@ export default function ImageToVideo() {
       const comfyuiUrl = prefs.comfyUiServer || 'http://127.0.0.1:8188'
       formData.append('comfyui_url', comfyuiUrl)
       
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 5, 90))
-      }, 2000)
-      
-      // Call the backend API
+      // Call the backend API to start generation
       const response = await fetch('http://127.0.0.1:8000/generate_image_to_video', {
         method: 'POST',
         body: formData
       })
       
-      clearInterval(progressInterval)
-      setProgress(100)
-      
       const result = await response.json()
       
       if (result.success) {
-        // Convert the result path to a URL that can be displayed
-        const videoUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(result.resultPath)}`
-        setVideoUrl(videoUrl)
+        setPromptId(result.prompt_id)
+        setStatusMessage('Generation started, checking status...')
+        
+        // Start polling for status
+        pollForStatus(result.prompt_id, comfyuiUrl)
       } else {
         console.error('Generation failed:', result.error)
         alert(`Generation failed: ${result.message}`)
+        setIsGenerating(false)
       }
     } catch (error) {
-      console.error('Error generating video:', error)
-      alert('Failed to generate video. Please check your ComfyUI server connection.')
-    } finally {
+      console.error('Error starting generation:', error)
+      alert('Failed to start generation. Please check your ComfyUI server connection.')
       setIsGenerating(false)
     }
+  }
+
+  const pollForStatus = async (promptId, comfyuiUrl) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusResponse = await fetch(`http://127.0.0.1:8000/status/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+        const statusResult = await statusResponse.json()
+        
+        if (statusResult.success) {
+          setStatusMessage(statusResult.message)
+          setProgress(statusResult.progress || 0)
+          
+          if (statusResult.status === 'completed') {
+            clearInterval(pollInterval)
+            
+            // Get the result
+            const resultResponse = await fetch(`http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+            const resultData = await resultResponse.json()
+            
+            if (resultData.success) {
+              const videoUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(resultData.resultPath)}`
+              setVideoUrl(videoUrl)
+              setStatusMessage('Generation completed successfully!')
+              setProgress(100)
+            } else {
+              alert(`Failed to get result: ${resultData.message}`)
+            }
+            
+            setIsGenerating(false)
+          } else if (statusResult.status === 'error') {
+            clearInterval(pollInterval)
+            alert(`Generation error: ${statusResult.message}`)
+            setIsGenerating(false)
+          }
+        } else {
+          clearInterval(pollInterval)
+          alert(`Status check failed: ${statusResult.message}`)
+          setIsGenerating(false)
+        }
+      } catch (error) {
+        console.error('Error polling status:', error)
+        clearInterval(pollInterval)
+        alert('Error checking generation status')
+        setIsGenerating(false)
+      }
+    }, 2000) // Poll every 2 seconds
+    
+    // Cleanup interval after 10 minutes (videos take longer)
+    setTimeout(() => {
+      clearInterval(pollInterval)
+      if (isGenerating) {
+        setIsGenerating(false)
+        alert('Generation timed out')
+      }
+    }, 600000)
   }
 
   const onDownload = () => {
@@ -277,9 +330,15 @@ export default function ImageToVideo() {
                 <p className="text-sm">Your generated video will appear here.</p>
                 {!isGenerating && <p className="text-xs mt-1">Upload an image and click Generate.</p>}
                 {isGenerating && (
-                  <div className="mt-4 inline-flex items-center gap-2 text-gray-300">
-                    <Loader2 className="animate-spin" size={18} />
-                    <span>Generating video ({progress}%)...</span>
+                  <div className="mt-4 inline-flex flex-col items-center gap-2 text-gray-300">
+                    <div className="inline-flex items-center gap-2">
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Generating video ({progress}%)...</span>
+                    </div>
+                    <div className="text-sm text-gray-400">{statusMessage}</div>
+                    {promptId && (
+                      <div className="text-xs text-gray-500">Prompt ID: {promptId}</div>
+                    )}
                   </div>
                 )}
               </div>

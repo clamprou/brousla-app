@@ -97,8 +97,8 @@ def _call_llm_to_generate_workflow(prompt: str, api_key: Optional[str]) -> str:
     return f"Generate an image based on: {prompt}"
 
 
-def _execute_comfyui_workflow(workflow_json: dict, prompt_text: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
-    """Execute a ComfyUI workflow with the given prompt - handles both API and original formats"""
+def _queue_comfyui_workflow(workflow_json: dict, prompt_text: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
+    """Queue a ComfyUI workflow and return the prompt_id immediately"""
     try:
         client = ComfyUIClient(comfyui_url)
         
@@ -116,50 +116,18 @@ def _execute_comfyui_workflow(workflow_json: dict, prompt_text: str, comfyui_url
             # This is original format - use as is
             workflow_to_queue = modified_workflow
         
-        # Queue the prompt
+        # Queue the prompt and return prompt_id immediately
         queue_result = client.queue_prompt(workflow_to_queue)
         prompt_id = queue_result["prompt_id"]
         
-        # Wait for completion
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(client.wait_for_completion(prompt_id))
-        finally:
-            loop.close()
-        
-        # Download the generated images
-        if result["images"]:
-            image_info = result["images"][0]  # Get first image
-            image_data = client.get_image(
-                image_info["filename"],
-                image_info.get("subfolder", ""),
-                image_info.get("type", "output")
-            )
-            
-            # Save image to outputs directory
-            output_filename = f"{uuid.uuid4().hex}_{image_info['filename']}"
-            output_path = os.path.join(OUTPUTS_DIR, output_filename)
-            
-            with open(output_path, 'wb') as f:
-                f.write(image_data)
-            
-            return output_path
-        else:
-            raise Exception("No images generated")
+        return prompt_id
             
     except Exception as e:
-        # Create error file
-        error_filename = f"error_{uuid.uuid4().hex}.txt"
-        error_path = os.path.join(OUTPUTS_DIR, error_filename)
-        with open(error_path, 'w', encoding='utf-8') as f:
-            f.write(f"ComfyUI Error: {str(e)}\n")
-            f.write(f"Prompt: {prompt_text}\n")
-        return error_path
+        raise Exception(f"Failed to queue ComfyUI workflow: {str(e)}")
 
 
-def _execute_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
-    """Execute a ComfyUI workflow for image-to-video generation - handles both API and original formats"""
+def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
+    """Queue a ComfyUI image-to-video workflow and return the prompt_id immediately"""
     try:
         client = ComfyUIClient(comfyui_url)
         
@@ -185,19 +153,30 @@ def _execute_comfyui_image_to_video(workflow_json: dict, image_data: bytes, imag
             # This is original format - use as is
             workflow_to_queue = modified_workflow
         
-        # Queue the prompt
+        # Queue the prompt and return prompt_id immediately
         queue_result = client.queue_prompt(workflow_to_queue)
         prompt_id = queue_result["prompt_id"]
+        
+        return prompt_id
+            
+    except Exception as e:
+        raise Exception(f"Failed to queue ComfyUI image-to-video workflow: {str(e)}")
+
+
+def _get_comfyui_result(prompt_id: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
+    """Get the result of a completed ComfyUI workflow"""
+    try:
+        client = ComfyUIClient(comfyui_url)
         
         # Wait for completion
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(client.wait_for_completion(prompt_id, timeout=600))  # Longer timeout for video
+            result = loop.run_until_complete(client.wait_for_completion(prompt_id))
         finally:
             loop.close()
         
-        # Download the generated video/images
+        # Download the generated images/videos
         if result["images"]:
             output_info = result["images"][0]  # Get first output
             output_data = client.get_image(
@@ -213,7 +192,8 @@ def _execute_comfyui_image_to_video(workflow_json: dict, image_data: bytes, imag
             with open(output_path, 'wb') as f:
                 f.write(output_data)
             
-            return output_path
+            # Return relative path from OUTPUTS_DIR for the /file endpoint
+            return output_filename
         else:
             raise Exception("No output generated")
             
@@ -222,8 +202,8 @@ def _execute_comfyui_image_to_video(workflow_json: dict, image_data: bytes, imag
         error_filename = f"error_{uuid.uuid4().hex}.txt"
         error_path = os.path.join(OUTPUTS_DIR, error_filename)
         with open(error_path, 'w', encoding='utf-8') as f:
-            f.write(f"ComfyUI Image-to-Video Error: {str(e)}\n")
-            f.write(f"Image: {image_filename}\n")
+            f.write(f"ComfyUI Error: {str(e)}\n")
+            f.write(f"Prompt ID: {prompt_id}\n")
         return error_path
 
 
@@ -233,37 +213,26 @@ async def generate_image(
     prompt: str = Form(...),
     comfyui_url: str = Form(default="http://127.0.0.1:8188")
 ):
-    """Generate an image using ComfyUI workflow"""
+    """Queue an image generation workflow and return prompt_id immediately"""
     try:
         # Read workflow file
         workflow_content = await workflow_file.read()
         workflow_json = json.loads(workflow_content.decode('utf-8'))
         
-        # Execute workflow
-        result_path = _execute_comfyui_workflow(workflow_json, prompt, comfyui_url)
-        
-        # Add to history
-        item = {
-            'id': uuid.uuid4().hex,
-            'type': 'image_generation',
-            'prompt': prompt,
-            'workflow_file': workflow_file.filename,
-            'resultPath': result_path,
-            'createdAt': datetime.utcnow().isoformat() + 'Z',
-        }
-        _append_history(item)
+        # Queue workflow and get prompt_id immediately
+        prompt_id = _queue_comfyui_workflow(workflow_json, prompt, comfyui_url)
         
         return {
             'success': True,
-            'resultPath': result_path,
-            'message': 'Image generated successfully'
+            'prompt_id': prompt_id,
+            'message': 'Image generation started'
         }
         
     except Exception as e:
         return {
             'success': False,
             'error': str(e),
-            'message': 'Failed to generate image'
+            'message': 'Failed to start image generation'
         }
 
 
@@ -273,37 +242,26 @@ async def generate_video(
     prompt: str = Form(...),
     comfyui_url: str = Form(default="http://127.0.0.1:8188")
 ):
-    """Generate a video using ComfyUI workflow"""
+    """Queue a video generation workflow and return prompt_id immediately"""
     try:
         # Read workflow file
         workflow_content = await workflow_file.read()
         workflow_json = json.loads(workflow_content.decode('utf-8'))
         
-        # Execute workflow
-        result_path = _execute_comfyui_workflow(workflow_json, prompt, comfyui_url)
-        
-        # Add to history
-        item = {
-            'id': uuid.uuid4().hex,
-            'type': 'video_generation',
-            'prompt': prompt,
-            'workflow_file': workflow_file.filename,
-            'resultPath': result_path,
-            'createdAt': datetime.utcnow().isoformat() + 'Z',
-        }
-        _append_history(item)
+        # Queue workflow and get prompt_id immediately
+        prompt_id = _queue_comfyui_workflow(workflow_json, prompt, comfyui_url)
         
         return {
             'success': True,
-            'resultPath': result_path,
-            'message': 'Video generated successfully'
+            'prompt_id': prompt_id,
+            'message': 'Video generation started'
         }
         
     except Exception as e:
         return {
             'success': False,
             'error': str(e),
-            'message': 'Failed to generate video'
+            'message': 'Failed to start video generation'
         }
 
 
@@ -313,7 +271,7 @@ async def generate_image_to_video(
     image_file: UploadFile = File(...),
     comfyui_url: str = Form(default="http://127.0.0.1:8188")
 ):
-    """Generate a video from an image using ComfyUI workflow"""
+    """Queue an image-to-video generation workflow and return prompt_id immediately"""
     try:
         # Read workflow file
         workflow_content = await workflow_file.read()
@@ -322,20 +280,65 @@ async def generate_image_to_video(
         # Read image file
         image_content = await image_file.read()
         
-        # Execute workflow
-        result_path = _execute_comfyui_image_to_video(
+        # Queue workflow and get prompt_id immediately
+        prompt_id = _queue_comfyui_image_to_video(
             workflow_json, 
             image_content, 
             image_file.filename, 
             comfyui_url
         )
         
+        return {
+            'success': True,
+            'prompt_id': prompt_id,
+            'message': 'Image-to-video generation started'
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to start image-to-video generation'
+        }
+
+
+@app.get('/status/{prompt_id}')
+def get_generation_status(prompt_id: str, comfyui_url: str = Query(default="http://127.0.0.1:8188")):
+    """Get the current status of a generation request"""
+    try:
+        client = ComfyUIClient(comfyui_url)
+        progress_info = client.get_prompt_progress(prompt_id)
+        
+        return {
+            'success': True,
+            'prompt_id': prompt_id,
+            'status': progress_info['status'],
+            'progress': progress_info.get('progress', 0),
+            'message': progress_info['message']
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'prompt_id': prompt_id,
+            'status': 'error',
+            'progress': 0,
+            'message': f'Error checking status: {str(e)}'
+        }
+
+
+@app.get('/result/{prompt_id}')
+def get_generation_result(prompt_id: str, comfyui_url: str = Query(default="http://127.0.0.1:8188")):
+    """Get the result of a completed generation request"""
+    try:
+        # Get the result file path
+        result_path = _get_comfyui_result(prompt_id, comfyui_url)
+        
         # Add to history
         item = {
             'id': uuid.uuid4().hex,
-            'type': 'image_to_video',
-            'image_file': image_file.filename,
-            'workflow_file': workflow_file.filename,
+            'type': 'generation_result',
+            'prompt_id': prompt_id,
             'resultPath': result_path,
             'createdAt': datetime.utcnow().isoformat() + 'Z',
         }
@@ -343,24 +346,36 @@ async def generate_image_to_video(
         
         return {
             'success': True,
+            'prompt_id': prompt_id,
             'resultPath': result_path,
-            'message': 'Video generated successfully from image'
+            'message': 'Generation completed successfully'
         }
         
     except Exception as e:
         return {
             'success': False,
+            'prompt_id': prompt_id,
             'error': str(e),
-            'message': 'Failed to generate video from image'
+            'message': 'Failed to get generation result'
         }
 
 
 @app.get('/file')
-def get_file(path: str = Query(..., description="Absolute or server-relative path to serve")):
+def get_file(path: str = Query(..., description="Relative path from OUTPUTS_DIR to serve")):
     # Security: restrict to OUTPUTS_DIR
-    abs_path = os.path.abspath(path)
-    if not abs_path.startswith(os.path.abspath(OUTPUTS_DIR)):
-        return {"error": "Access denied"}
+    # Handle both relative and absolute paths
+    if os.path.isabs(path):
+        abs_path = os.path.abspath(path)
+        if not abs_path.startswith(os.path.abspath(OUTPUTS_DIR)):
+            return {"error": "Access denied"}
+    else:
+        # Relative path - join with OUTPUTS_DIR
+        abs_path = os.path.join(OUTPUTS_DIR, path)
+        # Additional security check to prevent directory traversal
+        abs_path = os.path.abspath(abs_path)
+        if not abs_path.startswith(os.path.abspath(OUTPUTS_DIR)):
+            return {"error": "Access denied"}
+    
     return FileResponse(abs_path)
 
 

@@ -8,6 +8,8 @@ export default function TextToImage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const [workflowFile, setWorkflowFile] = useState(null)
+  const [promptId, setPromptId] = useState(null)
+  const [statusMessage, setStatusMessage] = useState('')
   const [imageSize, setImageSize] = useState('768x768')
   const [numSteps, setNumSteps] = useState(25)
   const [cfgScale, setCfgScale] = useState(7.5)
@@ -22,6 +24,8 @@ export default function TextToImage() {
     if (!prompt.trim() || !workflowFile) return
     setIsGenerating(true)
     setImageUrl('')
+    setPromptId(null)
+    setStatusMessage('Starting generation...')
     
     try {
       // Create FormData for the API call
@@ -37,7 +41,7 @@ export default function TextToImage() {
       const comfyuiUrl = prefs.comfyUiServer || 'http://127.0.0.1:8188'
       formData.append('comfyui_url', comfyuiUrl)
       
-      // Call the backend API
+      // Call the backend API to start generation
       const response = await fetch('http://127.0.0.1:8000/generate_image', {
         method: 'POST',
         body: formData
@@ -46,20 +50,75 @@ export default function TextToImage() {
       const result = await response.json()
       
       if (result.success) {
-        // Convert the result path to a URL that can be displayed
-        const imageUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(result.resultPath)}`
-        setImageUrl(imageUrl)
+        setPromptId(result.prompt_id)
+        setStatusMessage('Generation started, checking status...')
+        
+        // Start polling for status
+        pollForStatus(result.prompt_id, comfyuiUrl)
       } else {
         console.error('Generation failed:', result.error)
         alert(`Generation failed: ${result.message}`)
+        setIsGenerating(false)
       }
     } catch (error) {
-      console.error('Error generating image:', error)
-      alert('Failed to generate image. Please check your ComfyUI server connection.')
-    } finally {
+      console.error('Error starting generation:', error)
+      alert('Failed to start generation. Please check your ComfyUI server connection.')
       setIsGenerating(false)
     }
   }, [prompt, workflowFile])
+
+  const pollForStatus = useCallback(async (promptId, comfyuiUrl) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusResponse = await fetch(`http://127.0.0.1:8000/status/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+        const statusResult = await statusResponse.json()
+        
+        if (statusResult.success) {
+          setStatusMessage(statusResult.message)
+          
+          if (statusResult.status === 'completed') {
+            clearInterval(pollInterval)
+            
+            // Get the result
+            const resultResponse = await fetch(`http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+            const resultData = await resultResponse.json()
+            
+            if (resultData.success) {
+              const imageUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(resultData.resultPath)}`
+              setImageUrl(imageUrl)
+              setStatusMessage('Generation completed successfully!')
+            } else {
+              alert(`Failed to get result: ${resultData.message}`)
+            }
+            
+            setIsGenerating(false)
+          } else if (statusResult.status === 'error') {
+            clearInterval(pollInterval)
+            alert(`Generation error: ${statusResult.message}`)
+            setIsGenerating(false)
+          }
+        } else {
+          clearInterval(pollInterval)
+          alert(`Status check failed: ${statusResult.message}`)
+          setIsGenerating(false)
+        }
+      } catch (error) {
+        console.error('Error polling status:', error)
+        clearInterval(pollInterval)
+        alert('Error checking generation status')
+        setIsGenerating(false)
+      }
+    }, 2000) // Poll every 2 seconds
+    
+    // Cleanup interval after 5 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval)
+      if (isGenerating) {
+        setIsGenerating(false)
+        alert('Generation timed out')
+      }
+    }, 300000)
+  }, [isGenerating])
 
   const handleDownload = useCallback(async () => {
     if (!imageUrl) return
@@ -170,7 +229,10 @@ export default function TextToImage() {
             {isGenerating && (
               <div className="flex flex-col items-center gap-3 text-gray-300">
                 <span className="h-10 w-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <div className="text-sm">Generating preview…</div>
+                <div className="text-sm">{statusMessage}</div>
+                {promptId && (
+                  <div className="text-xs text-gray-400">Prompt ID: {promptId}</div>
+                )}
               </div>
             )}
             {!isGenerating && imageUrl && (

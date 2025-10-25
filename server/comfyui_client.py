@@ -48,6 +48,98 @@ class ComfyUIClient:
             logger.error(f"Failed to get history: {e}")
             raise Exception(f"Failed to get ComfyUI history: {e}")
     
+    def get_prompt_status(self, prompt_id: str) -> Dict[str, Any]:
+        """Get the current status of a prompt execution"""
+        try:
+            # Check if prompt is in history (completed)
+            history = self.get_history(prompt_id)
+            if prompt_id in history:
+                return {
+                    "status": "completed",
+                    "prompt_id": prompt_id,
+                    "message": "Execution completed successfully"
+                }
+            
+            # Check if prompt is in queue (running)
+            queue = self.get_queue()
+            queue_pending = queue.get("queue_pending", [])
+            queue_running = queue.get("queue_running", [])
+            
+            # Check pending queue
+            for item in queue_pending:
+                if item[1] == prompt_id:
+                    return {
+                        "status": "pending",
+                        "prompt_id": prompt_id,
+                        "message": "Waiting in queue",
+                        "position": queue_pending.index(item) + 1
+                    }
+            
+            # Check running queue
+            for item in queue_running:
+                if item[1] == prompt_id:
+                    return {
+                        "status": "running",
+                        "prompt_id": prompt_id,
+                        "message": "Currently executing"
+                    }
+            
+            # Prompt not found in any queue or history
+            return {
+                "status": "not_found",
+                "prompt_id": prompt_id,
+                "message": "Prompt not found"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get prompt status: {e}")
+            return {
+                "status": "error",
+                "prompt_id": prompt_id,
+                "message": f"Error checking status: {str(e)}"
+            }
+    
+    def get_prompt_progress(self, prompt_id: str) -> Dict[str, Any]:
+        """Get detailed progress information for a prompt"""
+        try:
+            status = self.get_prompt_status(prompt_id)
+            
+            if status["status"] == "completed":
+                # Get execution result
+                result = self._get_execution_result(prompt_id)
+                return {
+                    "status": "completed",
+                    "prompt_id": prompt_id,
+                    "progress": 100,
+                    "message": "Execution completed",
+                    "result": result
+                }
+            elif status["status"] == "running":
+                return {
+                    "status": "running",
+                    "prompt_id": prompt_id,
+                    "progress": 50,  # Approximate progress for running
+                    "message": "Currently executing workflow"
+                }
+            elif status["status"] == "pending":
+                return {
+                    "status": "pending",
+                    "prompt_id": prompt_id,
+                    "progress": 10,
+                    "message": f"Waiting in queue (position {status.get('position', '?')})"
+                }
+            else:
+                return status
+                
+        except Exception as e:
+            logger.error(f"Failed to get prompt progress: {e}")
+            return {
+                "status": "error",
+                "prompt_id": prompt_id,
+                "progress": 0,
+                "message": f"Error getting progress: {str(e)}"
+            }
+    
     def get_image(self, filename: str, subfolder: str = "", folder_type: str = "output") -> bytes:
         """Download an image from ComfyUI"""
         try:
