@@ -5,6 +5,7 @@ import { settingsManager } from '../utils/settingsManager.js'
 
 export default function TextToVideo() {
   const [prompt, setPrompt] = React.useState('')
+  const [negativePrompt, setNegativePrompt] = React.useState('')
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [progress, setProgress] = React.useState(0)
   const [showAdvanced, setShowAdvanced] = React.useState(false)
@@ -39,6 +40,9 @@ export default function TextToVideo() {
       const workflowBlob = new Blob([JSON.stringify(workflowFile.json)], { type: 'application/json' })
       formData.append('workflow_file', workflowBlob, workflowFile.fileName)
       formData.append('prompt', prompt.trim())
+      if (negativePrompt.trim()) {
+        formData.append('negative_prompt', negativePrompt.trim())
+      }
       
       // Get ComfyUI URL from preferences (default to localhost)
       const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
@@ -171,29 +175,6 @@ export default function TextToVideo() {
               rows={10}
               className="w-full resize-y min-h-[220px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                onClick={startGeneration}
-                disabled={isGenerating || !prompt.trim() || !workflowFile}
-                className={[
-                  'px-4 py-2 rounded-lg font-medium transition-colors',
-                  isGenerating || !prompt.trim() || !workflowFile ? 'bg-gray-700 text-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
-                ].join(' ')}
-              >
-                {isGenerating ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="animate-spin" size={16} /> Generating...
-                  </span>
-                ) : (
-                  'Generate Video'
-                )}
-              </button>
-              {isGenerating && (
-                <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -210,6 +191,17 @@ export default function TextToVideo() {
             </div>
             {showAdvanced && (
               <div className="mt-4 space-y-5">
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Negative Prompt</label>
+                  <textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="Describe what you want to avoid..."
+                    rows={3}
+                    className="w-full resize-y min-h-[60px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                
                 {/* Duration */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -241,6 +233,31 @@ export default function TextToVideo() {
                     </select>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Generate Button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={startGeneration}
+              disabled={isGenerating || !prompt.trim() || !workflowFile}
+              className={[
+                'px-4 py-2 rounded-lg font-medium transition-colors',
+                isGenerating || !prompt.trim() || !workflowFile ? 'bg-gray-700 text-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
+              ].join(' ')}
+            >
+              {isGenerating ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={16} /> Generating...
+                </span>
+              ) : (
+                'Generate Video'
+              )}
+            </button>
+            {isGenerating && (
+              <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
               </div>
             )}
           </div>

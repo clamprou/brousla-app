@@ -1,9 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react'
+import { Settings as SettingsIcon, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 import { settingsManager } from '../utils/settingsManager.js'
 
 export default function TextToImage() {
   const [prompt, setPrompt] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -11,15 +13,10 @@ export default function TextToImage() {
   const [workflowFile, setWorkflowFile] = useState(null)
   const [promptId, setPromptId] = useState(null)
   const [statusMessage, setStatusMessage] = useState('')
-  const [imageSize, setImageSize] = useState('768x768')
-  const [numSteps, setNumSteps] = useState(25)
-  const [cfgScale, setCfgScale] = useState(7.5)
-
-  const sizeOptions = useMemo(() => [
-    '512x512',
-    '768x768',
-    '1024x1024'
-  ], [])
+  const [imageWidth, setImageWidth] = useState('')
+  const [imageHeight, setImageHeight] = useState('')
+  const [numSteps, setNumSteps] = useState('')
+  const [cfgScale, setCfgScale] = useState('')
 
     const startGeneration = useCallback(async () => {
     if (!prompt.trim() || !workflowFile) return
@@ -44,6 +41,28 @@ export default function TextToImage() {
       const workflowBlob = new Blob([JSON.stringify(workflowFile.json)], { type: 'application/json' })
       formData.append('workflow_file', workflowBlob, workflowFile.fileName)
       formData.append('prompt', prompt.trim())
+      if (negativePrompt.trim()) {
+        formData.append('negative_prompt', negativePrompt.trim())
+      }
+      
+      // Add advanced settings if provided
+      console.log('Advanced settings:', { imageWidth, imageHeight, numSteps, cfgScale })
+      if (imageWidth.trim()) {
+        formData.append('width', imageWidth.trim())
+        console.log('Added width:', imageWidth.trim())
+      }
+      if (imageHeight.trim()) {
+        formData.append('height', imageHeight.trim())
+        console.log('Added height:', imageHeight.trim())
+      }
+      if (numSteps.trim()) {
+        formData.append('steps', numSteps.trim())
+        console.log('Added steps:', numSteps.trim())
+      }
+      if (cfgScale.trim()) {
+        formData.append('cfg_scale', cfgScale.trim())
+        console.log('Added cfg_scale:', cfgScale.trim())
+      }
       
       // Get ComfyUI URL from preferences (default to localhost)
       const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
@@ -74,7 +93,7 @@ export default function TextToImage() {
       alert('Failed to start generation. Please check your ComfyUI server connection.')
       setIsGenerating(false)
     }
-  }, [prompt, workflowFile])
+  }, [prompt, negativePrompt, workflowFile, imageWidth, imageHeight, numSteps, cfgScale])
 
   const pollForStatus = useCallback(async (promptId, comfyuiUrl) => {
     const pollInterval = setInterval(async () => {
@@ -176,59 +195,79 @@ export default function TextToImage() {
           <WorkflowFileUpload value={workflowFile} onChange={setWorkflowFile} />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
-        {/* Left panel */}
-        <div className="flex flex-col bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <label className="text-sm text-gray-300 mb-2">Prompt</label>
-          <textarea
-            className="flex-1 min-h-[200px] md:min-h-[300px] resize-vertical bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-3 focus:outline-none focus:ring-2 focus:ring-indigo-600"
-            placeholder="Describe the image you want to create…"
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-          />
-
-          <button
-            onClick={startGeneration}
-            disabled={isGenerating || !prompt.trim() || !workflowFile}
-            className={`mt-4 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors
-              ${isGenerating || !prompt.trim() || !workflowFile ? 'bg-indigo-700/50 text-gray-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
-          >
-            {isGenerating && (
-              <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            )}
-            {isGenerating ? 'Generating…' : 'Generate Image'}
-          </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Left section */}
+        <div className="space-y-6">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <label className="text-sm text-gray-300 mb-2">Prompt</label>
+            <textarea
+              className="w-full min-h-[200px] resize-vertical bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              placeholder="Describe the image you want to create…"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+            />
+          </div>
 
           {/* Advanced Settings */}
-          <div className="mt-4">
-            <button
-              onClick={() => setShowAdvanced(v => !v)}
-              className="w-full text-left text-sm text-gray-300 hover:text-white"
-            >
-              {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings'}
-            </button>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-gray-200 font-medium">
+                <SettingsIcon size={16} /> Advanced Settings
+              </div>
+              <button
+                onClick={() => setShowAdvanced(v => !v)}
+                className="text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                {showAdvanced ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+              </button>
+            </div>
             {showAdvanced && (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                
+              <div className="mt-4 space-y-3">
                 <div className="flex flex-col">
-                  <label className="text-xs text-gray-400 mb-1">Image Size</label>
-                  <select
+                  <label className="text-xs text-gray-400 mb-1">Negative Prompt</label>
+                  <textarea
+                    className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none resize-vertical min-h-[80px]"
+                    placeholder="Describe what you want to avoid..."
+                    value={negativePrompt}
+                    onChange={e => setNegativePrompt(e.target.value)}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Width</label>
+                  <input
+                    type="number"
+                    min={128}
+                    step={64}
+                    placeholder="e.g. 768"
                     className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none"
-                    value={imageSize}
-                    onChange={e => setImageSize(e.target.value)}
-                  >
-                    {sizeOptions.map(opt => <option key={opt}>{opt}</option>)}
-                  </select>
+                    value={imageWidth}
+                    onChange={e => setImageWidth(e.target.value)}
+                  />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-xs text-gray-400 mb-1">Number of Steps</label>
+                  <label className="text-xs text-gray-400 mb-1">Height</label>
+                  <input
+                    type="number"
+                    min={128}
+                    step={64}
+                    placeholder="e.g. 768"
+                    className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none"
+                    value={imageHeight}
+                    onChange={e => setImageHeight(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Steps</label>
                   <input
                     type="number"
                     min={1}
                     max={200}
+                    placeholder="e.g. 25"
                     className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none"
                     value={numSteps}
-                    onChange={e => setNumSteps(Number(e.target.value))}
+                    onChange={e => setNumSteps(e.target.value)}
                   />
                 </div>
                 <div className="flex flex-col">
@@ -238,13 +277,35 @@ export default function TextToImage() {
                     step="0.5"
                     min={1}
                     max={20}
+                    placeholder="e.g. 7.5"
                     className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none"
                     value={cfgScale}
-                    onChange={e => setCfgScale(Number(e.target.value))}
+                    onChange={e => setCfgScale(e.target.value)}
                   />
                 </div>
               </div>
+              </div>
             )}
+          </div>
+
+          {/* Generate Button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={startGeneration}
+              disabled={isGenerating || !prompt.trim() || !workflowFile}
+              className={[
+                'px-4 py-2 rounded-lg font-medium transition-colors',
+                isGenerating || !prompt.trim() || !workflowFile ? 'bg-gray-700 text-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
+              ].join(' ')}
+            >
+              {isGenerating ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={16} /> Generating...
+                </span>
+              ) : (
+                'Generate Image'
+              )}
+            </button>
           </div>
         </div>
 
@@ -268,14 +329,16 @@ export default function TextToImage() {
             )}
           </div>
 
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="mt-4">
             <button
               onClick={handleDownload}
               disabled={!imageUrl}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors
-                ${imageUrl ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-gray-800/50 text-gray-400 cursor-not-allowed'}`}
+              className={[
+                'inline-flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
+                imageUrl ? 'bg-gray-800 hover:bg-gray-700 text-gray-100' : 'bg-gray-800/60 text-gray-500 cursor-not-allowed'
+              ].join(' ')}
             >
-              Download Image
+              <Download size={16} /> Download Image
             </button>
           </div>
         </div>

@@ -12,6 +12,8 @@ export default function ImageToVideo() {
   const [showAdvanced, setShowAdvanced] = React.useState(false)
   const [durationSec, setDurationSec] = React.useState(5)
   const [motionStrength, setMotionStrength] = React.useState(50)
+  const [positivePrompt, setPositivePrompt] = React.useState('')
+  const [negativePrompt, setNegativePrompt] = React.useState('')
   const [workflowFile, setWorkflowFile] = React.useState(null)
   const [promptId, setPromptId] = React.useState(null)
   const [statusMessage, setStatusMessage] = React.useState('')
@@ -86,6 +88,14 @@ export default function ImageToVideo() {
       
       // Add ComfyUI path to form data
       formData.append('comfyui_path', settings.comfyuiPath)
+      
+      // Add prompts if provided
+      if (positivePrompt.trim()) {
+        formData.append('positive_prompt', positivePrompt.trim())
+      }
+      if (negativePrompt.trim()) {
+        formData.append('negative_prompt', negativePrompt.trim())
+      }
       
       // Call the backend API to start generation
       const response = await fetch('http://127.0.0.1:8000/generate_image_to_video', {
@@ -248,6 +258,17 @@ export default function ImageToVideo() {
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <label className="text-sm text-gray-300 mb-2">Positive Prompt (optional)</label>
+            <textarea
+              value={positivePrompt}
+              onChange={(e) => setPositivePrompt(e.target.value)}
+              placeholder="Describe the motion you want..."
+              rows={3}
+              className="w-full resize-y min-h-[80px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-gray-200 font-medium">
                 <SettingsIcon size={16} /> Advanced Settings
@@ -261,6 +282,17 @@ export default function ImageToVideo() {
             </div>
             {showAdvanced && (
               <div className="mt-4 space-y-5">
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Negative Prompt</label>
+                  <textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="Describe what you want to avoid..."
+                    rows={2}
+                    className="w-full resize-y min-h-[60px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                
                 {/* Duration */}
                 <div>
                   <div className="flex items-center justify-between mb-1">

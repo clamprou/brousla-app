@@ -268,7 +268,7 @@ class ComfyUIClient:
         
         return result
     
-    def modify_workflow_prompt(self, workflow: Dict[str, Any], prompt_text: str) -> Dict[str, Any]:
+    def modify_workflow_prompt(self, workflow: Dict[str, Any], positive_prompt: str, negative_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Modify workflow to update text prompts - handles API and original formats"""
         modified_workflow = json.loads(json.dumps(workflow))  # Deep copy
         
@@ -283,19 +283,27 @@ class ComfyUIClient:
             # Handle original format (workflow is the root object)
             workflow_data = modified_workflow
         
-        # Find and update text input nodes
+        # Track nodes to update
+        nodes_to_update = []
+        
+        # Find CLIPTextEncode nodes
         for node_id, node_data in workflow_data.items():
-            if isinstance(node_data, dict):
-                # Check if this is a text input node
-                if node_data.get("class_type") in ["CLIPTextEncode", "CLIPTextEncodeSDXL"]:
-                    # Update the text input
-                    if "inputs" in node_data and "text" in node_data["inputs"]:
-                        node_data["inputs"]["text"] = prompt_text
-                
-                # Also check for direct text nodes
-                elif node_data.get("class_type") == "String":
-                    if "inputs" in node_data and "string" in node_data["inputs"]:
-                        node_data["inputs"]["string"] = prompt_text
+            if isinstance(node_data, dict) and node_data.get("class_type") in ["CLIPTextEncode", "CLIPTextEncodeSDXL"]:
+                nodes_to_update.append((node_id, node_data))
+        
+        # Update positive prompt (first node found)
+        if nodes_to_update and len(nodes_to_update) > 0:
+            node_id, node_data = nodes_to_update[0]
+            if "inputs" in node_data and "text" in node_data["inputs"]:
+                node_data["inputs"]["text"] = positive_prompt
+                print(f"Updated positive prompt in node {node_id}")
+        
+        # Update negative prompt (second node found, if negative_prompt is provided)
+        if negative_prompt and len(nodes_to_update) > 1:
+            node_id, node_data = nodes_to_update[1]
+            if "inputs" in node_data and "text" in node_data["inputs"]:
+                node_data["inputs"]["text"] = negative_prompt
+                print(f"Updated negative prompt in node {node_id}")
         
         return modified_workflow
     
@@ -322,4 +330,52 @@ class ComfyUIClient:
                     if "inputs" in node_data:
                         node_data["inputs"]["image"] = filename
         
+        return modified_workflow
+    
+    def modify_workflow_settings(self, workflow: Dict[str, Any], width: Optional[int], height: Optional[int], steps: Optional[int], cfg_scale: Optional[float]) -> Dict[str, Any]:
+        """Modify workflow settings like dimensions, steps, and CFG scale"""
+        print(f"modify_workflow_settings called with: width={width}, height={height}, steps={steps}, cfg_scale={cfg_scale}")
+        modified_workflow = json.loads(json.dumps(workflow))  # Deep copy
+        
+        # Handle different API formats
+        if 'workflow' in modified_workflow and isinstance(modified_workflow['workflow'], dict):
+            workflow_data = modified_workflow['workflow']
+        elif 'prompt' in modified_workflow and isinstance(modified_workflow['prompt'], dict):
+            workflow_data = modified_workflow['prompt']
+        else:
+            workflow_data = modified_workflow
+        
+        # Find and update nodes
+        updated_count = 0
+        for node_id, node_data in workflow_data.items():
+            if isinstance(node_data, dict) and "inputs" in node_data:
+                inputs = node_data["inputs"]
+                
+                # Update Empty Latent Image or similar nodes (width and height)
+                if node_data.get("class_type") in ["EmptyLatentImage", "LatentFromBatch", "Wan22ImageToVideoLatent"]:
+                    if width is not None and "width" in inputs:
+                        old_width = inputs.get("width")
+                        inputs["width"] = width
+                        print(f"Updated width in node {node_id} from {old_width} to {width}")
+                        updated_count += 1
+                    if height is not None and "height" in inputs:
+                        old_height = inputs.get("height")
+                        inputs["height"] = height
+                        print(f"Updated height in node {node_id} from {old_height} to {height}")
+                        updated_count += 1
+                
+                # Update Sampler nodes (steps and cfg)
+                if node_data.get("class_type") in ["KSampler", "KSamplerAdvanced"]:
+                    if steps is not None and "steps" in inputs:
+                        old_steps = inputs.get("steps")
+                        inputs["steps"] = steps
+                        print(f"Updated steps in node {node_id} from {old_steps} to {steps}")
+                        updated_count += 1
+                    if cfg_scale is not None and "cfg" in inputs:
+                        old_cfg = inputs.get("cfg")
+                        inputs["cfg"] = cfg_scale
+                        print(f"Updated CFG scale in node {node_id} from {old_cfg} to {cfg_scale}")
+                        updated_count += 1
+        
+        print(f"modify_workflow_settings: Updated {updated_count} setting(s)")
         return modified_workflow
