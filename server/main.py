@@ -3,6 +3,8 @@ import json
 import uuid
 import asyncio
 import base64
+import shutil
+import traceback
 from datetime import datetime
 from typing import Optional
 
@@ -126,18 +128,23 @@ def _queue_comfyui_workflow(workflow_json: dict, prompt_text: str, comfyui_url: 
         raise Exception(f"Failed to queue ComfyUI workflow: {str(e)}")
 
 
-def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
+def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None) -> str:
     """Queue a ComfyUI image-to-video workflow and return the prompt_id immediately"""
     try:
         client = ComfyUIClient(comfyui_url)
         
+        if not comfyui_path or not os.path.exists(comfyui_path):
+            raise Exception("ComfyUI path not configured. Please set ComfyUI folder path in settings.")
+        
         # Upload image to ComfyUI input directory
-        input_dir = os.path.join(os.path.dirname(__file__), 'comfyui_inputs')
+        input_dir = os.path.join(comfyui_path, 'ComfyUI', 'input')
         os.makedirs(input_dir, exist_ok=True)
         
         input_path = os.path.join(input_dir, image_filename)
         with open(input_path, 'wb') as f:
             f.write(image_data)
+        
+        print(f"Uploaded image to ComfyUI input: {input_path}")
         
         # Modify workflow to use the uploaded image
         modified_workflow = client.modify_workflow_image_input(workflow_json, image_data, image_filename)
@@ -163,48 +170,87 @@ def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_
         raise Exception(f"Failed to queue ComfyUI image-to-video workflow: {str(e)}")
 
 
-def _get_comfyui_result(prompt_id: str, comfyui_url: str = "http://127.0.0.1:8188") -> str:
-    """Get the result of a completed ComfyUI workflow"""
+def _get_comfyui_result(prompt_id: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None) -> dict:
+    """Get the result of a completed ComfyUI workflow - returns path to file"""
     try:
         client = ComfyUIClient(comfyui_url)
         
-        # Wait for completion
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(client.wait_for_completion(prompt_id))
-        finally:
-            loop.close()
+        # Wait for completion - use simple polling instead of WebSocket
+        import time
+        timeout = 300  # 5 minutes
+        start_time = time.time()
+        result = None
         
-        # Download the generated images/videos
-        if result["images"]:
+        while time.time() - start_time < timeout:
+            try:
+                history = client.get_history(prompt_id)
+                if prompt_id in history:
+                    # Execution completed, get the result from history
+                    prompt_data = history[prompt_id]
+                    outputs = prompt_data.get("outputs", {})
+                    
+                    result = {
+                        "prompt_id": prompt_id,
+                        "status": "completed",
+                        "outputs": outputs,
+                        "images": []
+                    }
+                    
+                    # Extract image information
+                    for node_id, node_output in outputs.items():
+                        if "images" in node_output:
+                            for img_info in node_output["images"]:
+                                result["images"].append({
+                                    "filename": img_info["filename"],
+                                    "subfolder": img_info.get("subfolder", ""),
+                                    "type": img_info.get("type", "output")
+                                })
+                    break
+                time.sleep(2)  # Poll every 2 seconds
+            except Exception as e:
+                print(f"Polling error: {e}")
+                time.sleep(2)
+        
+        if not result:
+            raise TimeoutError(f"ComfyUI execution timed out after {timeout} seconds")
+        
+        # Extract output file information
+        if result.get("images") and len(result["images"]) > 0:
             output_info = result["images"][0]  # Get first output
-            output_data = client.get_image(
-                output_info["filename"],
-                output_info.get("subfolder", ""),
-                output_info.get("type", "output")
-            )
+            filename = output_info.get("filename")
+            subfolder = output_info.get("subfolder", "")
             
-            # Save output to outputs directory
-            output_filename = f"{uuid.uuid4().hex}_{output_info['filename']}"
-            output_path = os.path.join(OUTPUTS_DIR, output_filename)
+            if not filename:
+                raise Exception("Output image has no filename")
             
-            with open(output_path, 'wb') as f:
-                f.write(output_data)
+            # Return the filename and subfolder - simple approach
+            if comfyui_path and os.path.exists(comfyui_path):
+                # Construct path to ComfyUI output directory
+                comfyui_output_dir = os.path.join(comfyui_path, "ComfyUI", "output")
+                if subfolder:
+                    comfyui_output_dir = os.path.join(comfyui_output_dir, subfolder)
+                
+                source_path = os.path.join(comfyui_output_dir, filename)
+                
+                if os.path.exists(source_path):
+                    # Return just the filename - server will handle the path
+                    return {
+                        "filename": filename,
+                        "subfolder": subfolder
+                    }
+                else:
+                    raise Exception(f"ComfyUI output file not found at {source_path}")
             
-            # Return relative path from OUTPUTS_DIR for the /file endpoint
-            return output_filename
+            # If no ComfyUI path provided, throw error - user must configure ComfyUI path
+            raise Exception("ComfyUI path not configured. Please set ComfyUI folder path in settings. Go to Settings page and click 'Select ComfyUI Folder'.")
         else:
-            raise Exception("No output generated")
+            raise Exception(f"No output generated. Result structure: {result}")
             
     except Exception as e:
-        # Create error file
-        error_filename = f"error_{uuid.uuid4().hex}.txt"
-        error_path = os.path.join(OUTPUTS_DIR, error_filename)
-        with open(error_path, 'w', encoding='utf-8') as f:
-            f.write(f"ComfyUI Error: {str(e)}\n")
-            f.write(f"Prompt ID: {prompt_id}\n")
-        return error_path
+        import traceback
+        print(f"ERROR in _get_comfyui_result: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise e
 
 
 @app.post('/generate_image')
@@ -269,7 +315,8 @@ async def generate_video(
 async def generate_image_to_video(
     workflow_file: UploadFile = File(...),
     image_file: UploadFile = File(...),
-    comfyui_url: str = Form(default="http://127.0.0.1:8188")
+    comfyui_url: str = Form(default="http://127.0.0.1:8188"),
+    comfyui_path: str = Form(default=None)
 ):
     """Queue an image-to-video generation workflow and return prompt_id immediately"""
     try:
@@ -285,7 +332,8 @@ async def generate_image_to_video(
             workflow_json, 
             image_content, 
             image_file.filename, 
-            comfyui_url
+            comfyui_url,
+            comfyui_path
         )
         
         return {
@@ -328,18 +376,43 @@ def get_generation_status(prompt_id: str, comfyui_url: str = Query(default="http
 
 
 @app.get('/result/{prompt_id}')
-def get_generation_result(prompt_id: str, comfyui_url: str = Query(default="http://127.0.0.1:8188")):
+def get_generation_result(
+    prompt_id: str, 
+    comfyui_url: str = Query(default="http://127.0.0.1:8188"),
+    comfyui_path: Optional[str] = Query(default=None)
+):
     """Get the result of a completed generation request"""
     try:
-        # Get the result file path
-        result_path = _get_comfyui_result(prompt_id, comfyui_url)
+        # Get the result info (returns dict with filename and subfolder)
+        result_info = _get_comfyui_result(prompt_id, comfyui_url, comfyui_path)
+        print(f"Result info: {result_info}")
+        print(f"Result info type: {type(result_info)}")
+        
+        # Extract filename and subfolder from the result
+        if not isinstance(result_info, dict):
+            raise Exception(f"Unexpected result format: {result_info}")
+        
+        filename = result_info.get("filename")
+        subfolder = result_info.get("subfolder", "")
+        
+        print(f"Extracted filename: {filename}, subfolder: {subfolder}")
+        
+        if not filename:
+            raise Exception("No filename returned from ComfyUI result")
+        
+        # Return the filename and subfolder - client will construct simple URL
+        result_data = {
+            'filename': filename,
+            'subfolder': subfolder
+        }
         
         # Add to history
         item = {
             'id': uuid.uuid4().hex,
             'type': 'generation_result',
             'prompt_id': prompt_id,
-            'resultPath': result_path,
+            'filename': filename,
+            'subfolder': subfolder,
             'createdAt': datetime.utcnow().isoformat() + 'Z',
         }
         _append_history(item)
@@ -347,7 +420,8 @@ def get_generation_result(prompt_id: str, comfyui_url: str = Query(default="http
         return {
             'success': True,
             'prompt_id': prompt_id,
-            'resultPath': result_path,
+            'filename': filename,
+            'subfolder': subfolder,
             'message': 'Generation completed successfully'
         }
         
@@ -360,23 +434,47 @@ def get_generation_result(prompt_id: str, comfyui_url: str = Query(default="http
         }
 
 
-@app.get('/file')
-def get_file(path: str = Query(..., description="Relative path from OUTPUTS_DIR to serve")):
-    # Security: restrict to OUTPUTS_DIR
-    # Handle both relative and absolute paths
-    if os.path.isabs(path):
-        abs_path = os.path.abspath(path)
-        if not abs_path.startswith(os.path.abspath(OUTPUTS_DIR)):
-            return {"error": "Access denied"}
-    else:
-        # Relative path - join with OUTPUTS_DIR
-        abs_path = os.path.join(OUTPUTS_DIR, path)
-        # Additional security check to prevent directory traversal
-        abs_path = os.path.abspath(abs_path)
-        if not abs_path.startswith(os.path.abspath(OUTPUTS_DIR)):
-            return {"error": "Access denied"}
+@app.get('/comfyui-file')
+def get_comfyui_file(
+    filename: str = Query(..., description="Filename from ComfyUI output"),
+    subfolder: str = Query(default="", description="Subfolder from ComfyUI output"),
+    comfyui_path: str = Query(default=None, description="ComfyUI folder path")
+):
+    """Serve files from ComfyUI output directory"""
+    if not comfyui_path:
+        return {"error": "ComfyUI path not provided"}
     
-    return FileResponse(abs_path)
+    try:
+        # Construct path to ComfyUI output directory
+        comfyui_output_dir = os.path.join(comfyui_path, "ComfyUI", "output")
+        if subfolder:
+            comfyui_output_dir = os.path.join(comfyui_output_dir, subfolder)
+        
+        file_path = os.path.join(comfyui_output_dir, filename)
+        
+        print(f"Serving file from: {file_path}")
+        
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            # Determine media type based on file extension
+            if filename.lower().endswith('.mp4') or filename.lower().endswith('.webm'):
+                from fastapi.responses import Response
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+                return Response(content=content, media_type="video/mp4")
+            elif filename.lower().endswith('.png'):
+                return FileResponse(file_path, media_type="image/png")
+            elif filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+                return FileResponse(file_path, media_type="image/jpeg")
+            else:
+                return FileResponse(file_path)
+        else:
+            print(f"File not found at: {file_path}")
+            return {"error": f"File not found: {file_path}"}
+    except Exception as e:
+        print(f"Error serving file: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
 
 
 if __name__ == '__main__':

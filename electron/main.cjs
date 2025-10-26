@@ -7,7 +7,8 @@ let mainWindow = null
 let pythonProcess = null
 
 function getIsDev() {
-  return process.env.VITE_DEV_SERVER_PORT !== undefined
+  // Check if VITE_DEV_SERVER_PORT is set OR if we're not in production
+  return process.env.VITE_DEV_SERVER_PORT !== undefined || !app.isPackaged
 }
 
 function createWindow() {

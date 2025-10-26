@@ -4,9 +4,9 @@ import { Upload, FileText, AlertCircle } from 'lucide-react'
 export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI Workflow" }) {
   const fileInputRef = React.useRef(null)
   const [error, setError] = React.useState(null)
+  const [isDragging, setIsDragging] = React.useState(false)
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0]
+  const processFile = async (file) => {
     if (!file) return
 
     setError(null)
@@ -70,6 +70,32 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
     }
   }
 
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    await processFile(file)
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const file = e.dataTransfer.files?.[0]
+    await processFile(file)
+  }
+
   const handleUploadClick = () => {
     fileInputRef.current?.click()
   }
@@ -100,10 +126,19 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
         {!value ? (
           <div
             onClick={handleUploadClick}
-            className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 transition-colors bg-gray-900/50"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+              isDragging 
+                ? 'border-blue-500 bg-blue-900/20' 
+                : 'border-gray-700 hover:border-gray-600 bg-gray-900/50'
+            }`}
           >
-            <Upload className="h-5 w-5 text-gray-400" />
-            <span className="text-sm text-gray-300">Click to upload ComfyUI API workflow file</span>
+            <Upload className={`h-5 w-5 ${isDragging ? 'text-blue-400' : 'text-gray-400'}`} />
+            <span className={`text-sm ${isDragging ? 'text-blue-300' : 'text-gray-300'}`}>
+              {isDragging ? 'Drop workflow file here' : 'Click or drag to upload ComfyUI API workflow file'}
+            </span>
           </div>
         ) : (
           <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg border border-gray-700">

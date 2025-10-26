@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
+import { settingsManager } from '../utils/settingsManager.js'
 
 export default function TextToImage() {
   const [prompt, setPrompt] = useState('')
@@ -20,8 +21,16 @@ export default function TextToImage() {
     '1024x1024'
   ], [])
 
-  const startGeneration = useCallback(async () => {
+    const startGeneration = useCallback(async () => {
     if (!prompt.trim() || !workflowFile) return
+    
+    // Check if ComfyUI path is configured
+    const settings = settingsManager.getSettings()
+    if (!settings.comfyuiPath) {
+      alert('Please configure ComfyUI path in Settings first. Go to Settings and click "Select ComfyUI Folder".')
+      return
+    }
+    
     setIsGenerating(true)
     setImageUrl('')
     setPromptId(null)
@@ -79,16 +88,32 @@ export default function TextToImage() {
           if (statusResult.status === 'completed') {
             clearInterval(pollInterval)
             
+            // Get ComfyUI path from settings
+            const settings = settingsManager.getSettings()
+            const comfyuiPath = settings.comfyuiPath || null
+            
+            // Build the result URL with ComfyUI path if available
+            let resultUrl = `http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`
+            
+            if (comfyuiPath) {
+              resultUrl += `&comfyui_path=${encodeURIComponent(comfyuiPath)}`
+            }
             // Get the result
-            const resultResponse = await fetch(`http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+            const resultResponse = await fetch(resultUrl)
+            console.log('Result response:', resultResponse)
             const resultData = await resultResponse.json()
             
+            console.log('Result data received:', resultData)
+            
             if (resultData.success) {
-              const imageUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(resultData.resultPath)}`
+              // Construct simple URL with filename, subfolder, and comfyui_path
+              const imageUrl = `http://127.0.0.1:8000/comfyui-file?filename=${encodeURIComponent(resultData.filename)}&subfolder=${encodeURIComponent(resultData.subfolder || '')}&comfyui_path=${encodeURIComponent(comfyuiPath)}`
+              console.log('Constructed imageUrl:', imageUrl)
               setImageUrl(imageUrl)
               setStatusMessage('Generation completed successfully!')
             } else {
-              alert(`Failed to get result: ${resultData.message}`)
+              console.error('Result fetch failed:', resultData)
+              alert(`Failed to get result: ${resultData.message || resultData.error || 'Unknown error'}`)
             }
             
             setIsGenerating(false)

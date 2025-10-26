@@ -1,6 +1,7 @@
 import React from 'react'
 import { Upload, Settings as SettingsIcon, ChevronDown, ChevronRight, Loader2, Download, RotateCcw, ArrowRight } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
+import { settingsManager } from '../utils/settingsManager.js'
 
 export default function ImageToVideo() {
   const [selectedImage, setSelectedImage] = React.useState(null)
@@ -53,6 +54,14 @@ export default function ImageToVideo() {
 
   const startGeneration = async () => {
     if (!selectedImage || !workflowFile) return
+    
+    // Check if ComfyUI path is configured
+    const settings = settingsManager.getSettings()
+    if (!settings.comfyuiPath) {
+      alert('Please configure ComfyUI path in Settings first. Go to Settings and click "Select ComfyUI Folder".')
+      return
+    }
+    
     setIsGenerating(true)
     setProgress(0)
     setVideoUrl('')
@@ -74,6 +83,9 @@ export default function ImageToVideo() {
       const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
       const comfyuiUrl = prefs.comfyUiServer || 'http://127.0.0.1:8188'
       formData.append('comfyui_url', comfyuiUrl)
+      
+      // Add ComfyUI path to form data
+      formData.append('comfyui_path', settings.comfyuiPath)
       
       // Call the backend API to start generation
       const response = await fetch('http://127.0.0.1:8000/generate_image_to_video', {
@@ -114,17 +126,32 @@ export default function ImageToVideo() {
           if (statusResult.status === 'completed') {
             clearInterval(pollInterval)
             
+            // Get ComfyUI path from settings
+            const settings = settingsManager.getSettings()
+            const comfyuiPath = settings.comfyuiPath || null
+            
+            // Build the result URL with ComfyUI path if available
+            let resultUrl = `http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`
+            if (comfyuiPath) {
+              resultUrl += `&comfyui_path=${encodeURIComponent(comfyuiPath)}`
+            }
+            
             // Get the result
-            const resultResponse = await fetch(`http://127.0.0.1:8000/result/${promptId}?comfyui_url=${encodeURIComponent(comfyuiUrl)}`)
+            const resultResponse = await fetch(resultUrl)
             const resultData = await resultResponse.json()
             
+            console.log('Result data received:', resultData)
+            
             if (resultData.success) {
-              const videoUrl = `http://127.0.0.1:8000/file?path=${encodeURIComponent(resultData.resultPath)}`
+              // Construct simple URL with filename, subfolder, and comfyui_path
+              const videoUrl = `http://127.0.0.1:8000/comfyui-file?filename=${encodeURIComponent(resultData.filename)}&subfolder=${encodeURIComponent(resultData.subfolder || '')}&comfyui_path=${encodeURIComponent(comfyuiPath)}`
+              console.log('Constructed videoUrl:', videoUrl)
               setVideoUrl(videoUrl)
               setStatusMessage('Generation completed successfully!')
               setProgress(100)
             } else {
-              alert(`Failed to get result: ${resultData.message}`)
+              console.error('Result fetch failed:', resultData)
+              alert(`Failed to get result: ${resultData.message || resultData.error || 'Unknown error'}`)
             }
             
             setIsGenerating(false)
