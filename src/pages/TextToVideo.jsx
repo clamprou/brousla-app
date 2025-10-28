@@ -9,11 +9,15 @@ export default function TextToVideo() {
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [progress, setProgress] = React.useState(0)
   const [showAdvanced, setShowAdvanced] = React.useState(false)
-  const [durationSec, setDurationSec] = React.useState(5)
   const [workflowFile, setWorkflowFile] = React.useState(null)
   const [promptId, setPromptId] = React.useState(null)
   const [statusMessage, setStatusMessage] = React.useState('')
-  const [fps, setFps] = React.useState(24)
+  const [fps, setFps] = React.useState('')
+  const [steps, setSteps] = React.useState('')
+  const [length, setLength] = React.useState('')
+  const [width, setWidth] = React.useState('')
+  const [height, setHeight] = React.useState('')
+  const [seed, setSeed] = React.useState('')
   const [videoUrl, setVideoUrl] = React.useState('')
 
   const startGeneration = async () => {
@@ -42,6 +46,26 @@ export default function TextToVideo() {
       formData.append('prompt', prompt.trim())
       if (negativePrompt.trim()) {
         formData.append('negative_prompt', negativePrompt.trim())
+      }
+      
+      // Add advanced settings if provided
+      if (width.trim()) {
+        formData.append('width', width.trim())
+      }
+      if (height.trim()) {
+        formData.append('height', height.trim())
+      }
+      if (fps.trim()) {
+        formData.append('fps', fps.trim())
+      }
+      if (steps.trim()) {
+        formData.append('steps', steps.trim())
+      }
+      if (length.trim()) {
+        formData.append('length', length.trim())
+      }
+      if (seed.trim()) {
+        formData.append('seed', seed.trim())
       }
       
       // Get ComfyUI URL from preferences (default to localhost)
@@ -201,37 +225,101 @@ export default function TextToVideo() {
                     className="w-full resize-y min-h-[60px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
-                
-                {/* Duration */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm text-gray-300">Duration</label>
-                    <span className="text-xs text-gray-400">{durationSec}s</span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-gray-300 mb-1">Width</label>
+                    <input
+                      type="number"
+                      min={128}
+                      step={64}
+                      placeholder="e.g. 768"
+                      value={width}
+                      onChange={(e) => setWidth(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    value={durationSec}
-                    onChange={(e) => setDurationSec(Number(e.target.value))}
-                    className="w-full"
-                  />
+                  <div>
+                    <label className="text-sm text-gray-300 mb-1">Height</label>
+                    <input
+                      type="number"
+                      min={128}
+                      step={64}
+                      placeholder="e.g. 768"
+                      value={height}
+                      onChange={(e) => setHeight(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm text-gray-300">FPS</label>
-                    <select
+                    <label className="text-sm text-gray-300 mb-1">FPS</label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 24"
                       value={fps}
-                      onChange={(e) => setFps(Number(e.target.value))}
-                      className="mt-1 w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200"
-                    >
-                      <option value={12}>12</option>
-                      <option value={24}>24</option>
-                      <option value={30}>30</option>
-                      <option value={60}>60</option>
-                    </select>
+                      onChange={(e) => setFps(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
                   </div>
+                  <div>
+                    <label className="text-sm text-gray-300 mb-1">Steps</label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 50"
+                      value={steps}
+                      onChange={(e) => setSteps(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Length</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 1, 5, 9, 13..."
+                    value={length}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setLength(val)
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value
+                      if (val === '') {
+                        setLength('')
+                        return
+                      }
+                      const numVal = parseInt(val)
+                      if (!isNaN(numVal) && numVal > 0) {
+                        // Check if value matches pattern: 1 + 4*n where n >= 0
+                        if ((numVal - 1) % 4 !== 0) {
+                          // Round to nearest valid value
+                          const rounded = Math.round((numVal - 1) / 4) * 4 + 1
+                          setLength(Math.max(1, rounded).toString())
+                        }
+                      }
+                    }}
+                    className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Values: 1, 5, 9, 13, 17, 21... (increments of 4)</p>
+                </div>
+
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Seed</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 1234567890"
+                    value={seed}
+                    onChange={(e) => setSeed(e.target.value)}
+                    className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Define the outcome of the video</p>
                 </div>
               </div>
             )}

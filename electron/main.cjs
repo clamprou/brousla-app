@@ -28,7 +28,10 @@ function createWindow() {
   const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
   if (getIsDev()) {
     mainWindow.loadURL(`http://localhost:${devServerPort}`)
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    // Only open DevTools if not debugging (VS Code will attach if needed)
+    if (!process.env.VSCODE_INSPECTOR_OPTIONS) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
   } else {
     const distIndexPath = path.join(appBasePath, 'dist', 'index.html')
     if (!existsSync(distIndexPath)) {

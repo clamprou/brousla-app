@@ -4,7 +4,23 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: 'dist'
+    outDir: 'dist',
+    sourcemap: true
+  },
+  server: {
+    sourcemapIgnoreList: false
+  },
+  // Enable source maps in development for debugging
+  css: {
+    devSourcemap: true
+  },
+  esbuild: {
+    sourcemap: true
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      sourcemap: true
+    }
   }
 })
 

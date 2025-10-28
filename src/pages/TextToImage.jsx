@@ -17,6 +17,7 @@ export default function TextToImage() {
   const [imageHeight, setImageHeight] = useState('')
   const [numSteps, setNumSteps] = useState('')
   const [cfgScale, setCfgScale] = useState('')
+  const [seed, setSeed] = useState('')
 
     const startGeneration = useCallback(async () => {
     if (!prompt.trim() || !workflowFile) return
@@ -62,6 +63,10 @@ export default function TextToImage() {
       if (cfgScale.trim()) {
         formData.append('cfg_scale', cfgScale.trim())
         console.log('Added cfg_scale:', cfgScale.trim())
+      }
+      if (seed.trim()) {
+        formData.append('seed', seed.trim())
+        console.log('Added seed:', seed.trim())
       }
       
       // Get ComfyUI URL from preferences (default to localhost)
@@ -282,6 +287,17 @@ export default function TextToImage() {
                     value={cfgScale}
                     onChange={e => setCfgScale(e.target.value)}
                   />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Seed</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 1234567890"
+                    className="bg-gray-950 text-gray-100 rounded-lg border border-gray-800 p-2 focus:outline-none"
+                    value={seed}
+                    onChange={e => setSeed(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Define the outcome of the generation</p>
                 </div>
               </div>
               </div>

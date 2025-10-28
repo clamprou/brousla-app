@@ -332,9 +332,9 @@ class ComfyUIClient:
         
         return modified_workflow
     
-    def modify_workflow_settings(self, workflow: Dict[str, Any], width: Optional[int], height: Optional[int], steps: Optional[int], cfg_scale: Optional[float]) -> Dict[str, Any]:
-        """Modify workflow settings like dimensions, steps, and CFG scale"""
-        print(f"modify_workflow_settings called with: width={width}, height={height}, steps={steps}, cfg_scale={cfg_scale}")
+    def modify_workflow_settings(self, workflow: Dict[str, Any], width: Optional[int] = None, height: Optional[int] = None, steps: Optional[int] = None, cfg_scale: Optional[float] = None, fps: Optional[int] = None, length: Optional[int] = None, seed: Optional[int] = None) -> Dict[str, Any]:
+        """Modify workflow settings like dimensions, steps, CFG scale, fps, length, and seed"""
+        print(f"modify_workflow_settings called with: width={width}, height={height}, steps={steps}, cfg_scale={cfg_scale}, fps={fps}, length={length}, seed={seed}")
         modified_workflow = json.loads(json.dumps(workflow))  # Deep copy
         
         # Handle different API formats
@@ -351,18 +351,19 @@ class ComfyUIClient:
             if isinstance(node_data, dict) and "inputs" in node_data:
                 inputs = node_data["inputs"]
                 
-                # Update Empty Latent Image or similar nodes (width and height)
-                if node_data.get("class_type") in ["EmptyLatentImage", "LatentFromBatch", "Wan22ImageToVideoLatent"]:
-                    if width is not None and "width" in inputs:
-                        old_width = inputs.get("width")
-                        inputs["width"] = width
-                        print(f"Updated width in node {node_id} from {old_width} to {width}")
-                        updated_count += 1
-                    if height is not None and "height" in inputs:
-                        old_height = inputs.get("height")
-                        inputs["height"] = height
-                        print(f"Updated height in node {node_id} from {old_height} to {height}")
-                        updated_count += 1
+                # Update width in any node that has "width" parameter
+                if width is not None and "width" in inputs:
+                    old_width = inputs.get("width")
+                    inputs["width"] = width
+                    print(f"Updated width in node {node_id} ({node_data.get('class_type', 'Unknown')}) from {old_width} to {width}")
+                    updated_count += 1
+                
+                # Update height in any node that has "height" parameter
+                if height is not None and "height" in inputs:
+                    old_height = inputs.get("height")
+                    inputs["height"] = height
+                    print(f"Updated height in node {node_id} ({node_data.get('class_type', 'Unknown')}) from {old_height} to {height}")
+                    updated_count += 1
                 
                 # Update Sampler nodes (steps and cfg)
                 if node_data.get("class_type") in ["KSampler", "KSamplerAdvanced"]:
@@ -375,6 +376,41 @@ class ComfyUIClient:
                         old_cfg = inputs.get("cfg")
                         inputs["cfg"] = cfg_scale
                         print(f"Updated CFG scale in node {node_id} from {old_cfg} to {cfg_scale}")
+                        updated_count += 1
+                    if seed is not None and "seed" in inputs:
+                        old_seed = inputs.get("seed")
+                        inputs["seed"] = seed
+                        print(f"Updated seed in node {node_id} from {old_seed} to {seed}")
+                        updated_count += 1
+                
+                # Update FPS in any node that has "fps" parameter (video-related nodes)
+                if fps is not None and "fps" in inputs:
+                    old_fps = inputs.get("fps")
+                    # Only update if it's a numeric value or we're explicitly setting it
+                    inputs["fps"] = fps
+                    print(f"Updated fps in node {node_id} ({node_data.get('class_type', 'Unknown')}) from {old_fps} to {fps}")
+                    updated_count += 1
+                
+                # Update length/frames in any node that has frame-related parameters
+                if length is not None:
+                    # Try common parameter names for video length/frames
+                    for frame_param in ["frames", "max_frames", "num_frames", "length", "frame_count", "total_frames"]:
+                        if frame_param in inputs:
+                            old_value = inputs.get(frame_param)
+                            inputs[frame_param] = length
+                            print(f"Updated {frame_param}/length in node {node_id} ({node_data.get('class_type', 'Unknown')}) from {old_value} to {length}")
+                            updated_count += 1
+                            break  # Only update the first matching parameter
+                
+                # Also check for seed in any node (some nodes have seed as a general parameter)
+                # Skip if we already updated seed in a KSampler node above
+                if seed is not None and "seed" in inputs:
+                    # Check if this is a KSampler node (already handled above)
+                    is_sampler_node = node_data.get("class_type") in ["KSampler", "KSamplerAdvanced"]
+                    if not is_sampler_node:
+                        old_seed = inputs.get("seed")
+                        inputs["seed"] = seed
+                        print(f"Updated seed in node {node_id} ({node_data.get('class_type', 'Unknown')}) from {old_seed} to {seed}")
                         updated_count += 1
         
         print(f"modify_workflow_settings: Updated {updated_count} setting(s)")

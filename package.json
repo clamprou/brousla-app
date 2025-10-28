@@ -27,26 +27,26 @@
   },
   "homepage": "https://github.com/clamprou/brousla-app#readme",
   "devDependencies": {
-    "@types/node": "^22.7.5",
+    "@types/node": "^22.18.12",
     "@types/react": "^18.3.7",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
     "concurrently": "^9.0.1",
     "electron": "^38.2.0",
     "electron-builder": "^25.1.8",
-    "tailwindcss": "^3.4.10",
     "postcss": "^8.4.47",
-    "autoprefixer": "^10.4.20",
-    "@vitejs/plugin-react": "^4.3.3",
-    "wait-on": "^8.0.2",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.6.2",
     "vite": "^5.4.8",
-    "typescript": "^5.6.2"
+    "wait-on": "^8.0.2"
   },
   "dependencies": {
-    "cross-env": "^7.0.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "axios": "^1.7.7",
-    "lucide-react": "^0.453.0"
+    "cross-env": "^7.0.3",
+    "lucide-react": "^0.453.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "build": {
     "appId": "com.brousla.app",
@@ -62,18 +62,24 @@
       {
         "from": "server",
         "to": "server",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
       "category": "public.app-category.productivity"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "artifactName": "brousla-setup-${version}.exe"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Utility"
     }
   }

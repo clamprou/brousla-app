@@ -107,7 +107,10 @@ def _queue_comfyui_workflow(
     width: Optional[int] = None,
     height: Optional[int] = None,
     steps: Optional[int] = None,
-    cfg_scale: Optional[float] = None
+    cfg_scale: Optional[float] = None,
+    fps: Optional[int] = None,
+    length: Optional[int] = None,
+    seed: Optional[int] = None
 ) -> str:
     """Queue a ComfyUI workflow and return the prompt_id immediately"""
     try:
@@ -117,7 +120,7 @@ def _queue_comfyui_workflow(
         modified_workflow = client.modify_workflow_prompt(workflow_json, prompt_text, negative_prompt)
         
         # Modify workflow dimensions and sampler settings (always call to ensure settings are updated)
-        modified_workflow = client.modify_workflow_settings(modified_workflow, width, height, steps, cfg_scale)
+        modified_workflow = client.modify_workflow_settings(modified_workflow, width, height, steps, cfg_scale, fps, length, seed)
         
         # For API format workflows, we need to extract the actual workflow data
         if 'workflow' in modified_workflow and isinstance(modified_workflow['workflow'], dict):
@@ -140,7 +143,7 @@ def _queue_comfyui_workflow(
         raise Exception(f"Failed to queue ComfyUI workflow: {str(e)}")
 
 
-def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None, positive_prompt: Optional[str] = None, negative_prompt: Optional[str] = None) -> str:
+def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None, positive_prompt: Optional[str] = None, negative_prompt: Optional[str] = None, fps: Optional[int] = None, steps: Optional[int] = None, length: Optional[int] = None, seed: Optional[int] = None) -> str:
     """Queue a ComfyUI image-to-video workflow and return the prompt_id immediately"""
     try:
         client = ComfyUIClient(comfyui_url)
@@ -164,6 +167,9 @@ def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_
         # Then modify prompts if provided
         if positive_prompt or negative_prompt:
             modified_workflow = client.modify_workflow_prompt(modified_workflow, positive_prompt or "", negative_prompt)
+        
+        # Modify workflow settings (fps, steps, length, seed)
+        modified_workflow = client.modify_workflow_settings(modified_workflow, None, None, steps, None, fps, length, seed)
         
         # For API format workflows, we need to extract the actual workflow data
         if 'workflow' in modified_workflow and isinstance(modified_workflow['workflow'], dict):
@@ -278,11 +284,12 @@ async def generate_image(
     height: str = Form(default=""),
     steps: str = Form(default=""),
     cfg_scale: str = Form(default=""),
+    seed: str = Form(default=""),
     comfyui_url: str = Form(default="http://127.0.0.1:8188")
 ):
     """Queue an image generation workflow and return prompt_id immediately"""
     try:
-        print(f"Received parameters: width='{width}', height='{height}', steps='{steps}', cfg_scale='{cfg_scale}'")
+        print(f"Received parameters: width='{width}', height='{height}', steps='{steps}', cfg_scale='{cfg_scale}', seed='{seed}'")
         
         # Read workflow file
         workflow_content = await workflow_file.read()
@@ -293,6 +300,7 @@ async def generate_image(
         height_int = None
         steps_int = None
         cfg_scale_float = None
+        seed_int = None
         
         try:
             if width and width.strip():
@@ -318,7 +326,13 @@ async def generate_image(
         except ValueError:
             pass
         
-        print(f"Parsed parameters: width={width_int}, height={height_int}, steps={steps_int}, cfg_scale={cfg_scale_float}")
+        try:
+            if seed and seed.strip():
+                seed_int = int(seed)
+        except ValueError:
+            pass
+        
+        print(f"Parsed parameters: width={width_int}, height={height_int}, steps={steps_int}, cfg_scale={cfg_scale_float}, seed={seed_int}")
         
         # Queue workflow and get prompt_id immediately
         prompt_id = _queue_comfyui_workflow(
@@ -329,7 +343,10 @@ async def generate_image(
             width_int,
             height_int,
             steps_int,
-            cfg_scale_float
+            cfg_scale_float,
+            None,  # fps
+            None,  # length
+            seed_int
         )
         
         return {
@@ -351,6 +368,12 @@ async def generate_video(
     workflow_file: UploadFile = File(...),
     prompt: str = Form(...),
     negative_prompt: str = Form(default=""),
+    width: str = Form(default=""),
+    height: str = Form(default=""),
+    fps: str = Form(default=""),
+    steps: str = Form(default=""),
+    length: str = Form(default=""),
+    seed: str = Form(default=""),
     comfyui_url: str = Form(default="http://127.0.0.1:8188")
 ):
     """Queue a video generation workflow and return prompt_id immediately"""
@@ -359,8 +382,66 @@ async def generate_video(
         workflow_content = await workflow_file.read()
         workflow_json = json.loads(workflow_content.decode('utf-8'))
         
+        # Parse and validate numeric parameters
+        width_int = None
+        height_int = None
+        fps_int = None
+        steps_int = None
+        length_int = None
+        seed_int = None
+        
+        try:
+            if width and width.strip():
+                width_int = int(width)
+        except ValueError:
+            pass
+        
+        try:
+            if height and height.strip():
+                height_int = int(height)
+        except ValueError:
+            pass
+        
+        try:
+            if fps and fps.strip():
+                fps_int = int(fps)
+        except ValueError:
+            pass
+        
+        try:
+            if steps and steps.strip():
+                steps_int = int(steps)
+        except ValueError:
+            pass
+        
+        try:
+            if length and length.strip():
+                length_int = int(length)
+        except ValueError:
+            pass
+        
+        try:
+            if seed and seed.strip():
+                seed_int = int(seed)
+        except ValueError:
+            pass
+        
+        print(f"Parsed video parameters: width={width_int}, height={height_int}, fps={fps_int}, steps={steps_int}, length={length_int}, seed={seed_int}")
+        
         # Queue workflow and get prompt_id immediately
-        prompt_id = _queue_comfyui_workflow(workflow_json, prompt, comfyui_url, negative_prompt if negative_prompt else None)
+        prompt_id = _queue_comfyui_workflow(
+            workflow_json, 
+            prompt, 
+            comfyui_url, 
+            negative_prompt if negative_prompt else None,
+            width_int,
+            height_int,
+            steps_int,
+            None,  # cfg_scale
+            fps_int,
+            length_int,
+            seed_int
+        )
         
         return {
             'success': True,
@@ -382,6 +463,10 @@ async def generate_image_to_video(
     image_file: UploadFile = File(...),
     positive_prompt: str = Form(default=""),
     negative_prompt: str = Form(default=""),
+    fps: str = Form(default=""),
+    steps: str = Form(default=""),
+    length: str = Form(default=""),
+    seed: str = Form(default=""),
     comfyui_url: str = Form(default="http://127.0.0.1:8188"),
     comfyui_path: str = Form(default=None)
 ):
@@ -394,6 +479,38 @@ async def generate_image_to_video(
         # Read image file
         image_content = await image_file.read()
         
+        # Parse and validate numeric parameters
+        fps_int = None
+        steps_int = None
+        length_int = None
+        seed_int = None
+        
+        try:
+            if fps and fps.strip():
+                fps_int = int(fps)
+        except ValueError:
+            pass
+        
+        try:
+            if steps and steps.strip():
+                steps_int = int(steps)
+        except ValueError:
+            pass
+        
+        try:
+            if length and length.strip():
+                length_int = int(length)
+        except ValueError:
+            pass
+        
+        try:
+            if seed and seed.strip():
+                seed_int = int(seed)
+        except ValueError:
+            pass
+        
+        print(f"Parsed image-to-video parameters: fps={fps_int}, steps={steps_int}, length={length_int}, seed={seed_int}")
+        
         # Queue workflow and get prompt_id immediately
         prompt_id = _queue_comfyui_image_to_video(
             workflow_json, 
@@ -402,7 +519,11 @@ async def generate_image_to_video(
             comfyui_url,
             comfyui_path,
             positive_prompt if positive_prompt else None,
-            negative_prompt if negative_prompt else None
+            negative_prompt if negative_prompt else None,
+            fps_int,
+            steps_int,
+            length_int,
+            seed_int
         )
         
         return {
