@@ -35,7 +35,7 @@ class WorkflowManager {
       numberOfClips: workflowData.numberOfClips,
       videoWorkflowFile: workflowData.videoWorkflowFile,
       imageWorkflowFile: workflowData.imageWorkflowFile,
-      schedule: workflowData.schedule || 60, // Default to 60 minutes (1 hour) if not provided
+      schedule: workflowData.schedule || 1, // Default to 1 minute if not provided
       status: 'draft',
       lastRun: null,
       createdAt: new Date().toISOString(),
@@ -74,7 +74,7 @@ class WorkflowManager {
       numberOfClips: workflowData.numberOfClips || existingWorkflow.numberOfClips,
       videoWorkflowFile: workflowData.videoWorkflowFile || existingWorkflow.videoWorkflowFile,
       imageWorkflowFile: workflowData.imageWorkflowFile || existingWorkflow.imageWorkflowFile,
-      schedule: workflowData.schedule !== undefined ? workflowData.schedule : (existingWorkflow.schedule || 60),
+      schedule: workflowData.schedule !== undefined ? workflowData.schedule : (existingWorkflow.schedule || 1),
       updatedAt: new Date().toISOString()
     }
 

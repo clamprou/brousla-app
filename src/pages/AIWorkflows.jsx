@@ -1,29 +1,120 @@
 import React, { useState, useEffect } from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer } from 'lucide-react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
 
+const BACKEND_URL = 'http://127.0.0.1:8000'
+
 export default function AIWorkflows() {
   const [workflows, setWorkflows] = useState([])
+  const [workflowStates, setWorkflowStates] = useState({})
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, workflowId: null, workflowName: '' })
   const [isHelpSectionExpanded, setIsHelpSectionExpanded] = useState(false)
+  const [activatingWorkflow, setActivatingWorkflow] = useState(null)
 
-  // Load workflows on component mount and listen for updates
+  // Load workflow states from backend
+  const loadWorkflowStates = React.useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/workflows/status`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setWorkflowStates(data.states || {})
+        }
+      }
+    } catch (error) {
+      console.error('Error loading workflow states:', error)
+    }
+  }, [])
+
+  // Sync workflows with backend and load states
   useEffect(() => {
-    // Load initial workflows
-    setWorkflows(workflowManager.getWorkflows())
-
+    const syncWorkflows = async () => {
+      // Get workflows from local storage
+      const localWorkflows = workflowManager.getWorkflows()
+      setWorkflows(localWorkflows)
+      
+      // Sync workflows with backend
+      try {
+        await fetch(`${BACKEND_URL}/workflows/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(localWorkflows)
+        })
+      } catch (error) {
+        console.error('Error syncing workflows:', error)
+      }
+      
+      // Load workflow states
+      await loadWorkflowStates()
+    }
+    
+    syncWorkflows()
+    
     // Listen for workflow updates
-    const handleWorkflowsUpdate = (event) => {
-      setWorkflows(event.detail.workflows)
+    const handleWorkflowsUpdate = async (event) => {
+      const updatedWorkflows = event.detail.workflows
+      setWorkflows(updatedWorkflows)
+      
+      // Sync with backend
+      try {
+        await fetch(`${BACKEND_URL}/workflows/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedWorkflows)
+        })
+        await loadWorkflowStates()
+      } catch (error) {
+        console.error('Error syncing workflows:', error)
+      }
     }
 
     window.addEventListener('workflowsUpdated', handleWorkflowsUpdate)
     
+    // Poll workflow states every 5 seconds
+    const statePollInterval = setInterval(loadWorkflowStates, 5000)
+    
     return () => {
       window.removeEventListener('workflowsUpdated', handleWorkflowsUpdate)
+      clearInterval(statePollInterval)
     }
-  }, [])
+  }, [loadWorkflowStates])
+
+  // Handle activate/deactivate workflow
+  const handleToggleWorkflow = async (workflowId, isCurrentlyActive) => {
+    setActivatingWorkflow(workflowId)
+    try {
+      const endpoint = isCurrentlyActive ? 'deactivate' : 'activate'
+      const response = await fetch(`${BACKEND_URL}/workflows/${workflowId}/${endpoint}`, {
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          // Reload states
+          await loadWorkflowStates()
+        } else {
+          alert(data.error || 'Failed to update workflow state')
+        }
+      } else {
+        alert('Failed to update workflow state')
+      }
+    } catch (error) {
+      console.error('Error toggling workflow:', error)
+      alert('Error updating workflow state')
+    } finally {
+      setActivatingWorkflow(null)
+    }
+  }
+
+  // Get workflow state helper
+  const getWorkflowState = (workflowId) => {
+    return workflowStates[workflowId] || {
+      isActive: false,
+      isRunning: false
+    }
+  }
 
   const features = [
     {
@@ -131,13 +222,33 @@ export default function AIWorkflows() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <h4 className="font-medium text-base text-gray-200">{workflow.name}</h4>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        workflow.status === 'active' 
-                          ? 'bg-green-600/20 text-green-400 border border-green-600/30' 
-                          : 'bg-yellow-600/20 text-yellow-400 border border-yellow-600/30'
-                      }`}>
-                        {workflow.status}
-                      </span>
+                      {(() => {
+                        const state = getWorkflowState(workflow.id)
+                        const isActive = state.isActive
+                        const isRunning = state.isRunning
+                        
+                        // Determine badge color and text
+                        let badgeClass, badgeText
+                        if (isRunning) {
+                          // Blue for running
+                          badgeClass = 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
+                          badgeText = 'Running'
+                        } else if (isActive) {
+                          // Green for active and not running
+                          badgeClass = 'bg-green-600/20 text-green-400 border border-green-600/30'
+                          badgeText = 'Active'
+                        } else {
+                          // Red for inactive
+                          badgeClass = 'bg-red-600/20 text-red-400 border border-red-600/30'
+                          badgeText = 'Inactive'
+                        }
+                        
+                        return (
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
+                            {badgeText}
+                          </span>
+                        )
+                      })()}
                       <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded-full text-xs">
                         {workflow.numberOfClips} clips
                       </span>
@@ -169,9 +280,30 @@ export default function AIWorkflows() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
-                    <button className="p-2 text-gray-400 hover:text-blue-400 hover:bg-blue-600/20 rounded-lg transition-colors" title="Run Workflow">
-                      <Play className="h-4 w-4" />
-                    </button>
+                    {(() => {
+                      const state = getWorkflowState(workflow.id)
+                      const isActive = state.isActive
+                      const isProcessing = activatingWorkflow === workflow.id
+                      
+                      return (
+                        <button
+                          onClick={() => handleToggleWorkflow(workflow.id, isActive)}
+                          disabled={isProcessing || state.isRunning}
+                          className={`p-2 rounded-lg transition-colors ${
+                            isActive
+                              ? 'text-green-400 hover:text-green-300 hover:bg-green-600/20'
+                              : 'text-gray-400 hover:text-red-300 hover:bg-red-600/20'
+                          } ${isProcessing || state.isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={isActive ? 'Deactivate Workflow' : 'Activate Workflow'}
+                        >
+                          {isActive ? (
+                            <PowerOff className="h-4 w-4" />
+                          ) : (
+                            <Power className="h-4 w-4" />
+                          )}
+                        </button>
+                      )
+                    })()}
                     <button 
                       onClick={() => handleEditWorkflow(workflow.id)}
                       className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" 

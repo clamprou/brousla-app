@@ -45,14 +45,14 @@ export default function CreateWorkflow() {
         setWorkflowType(detectedType)
         
         // Load schedule: convert from minutes to appropriate display unit
-        const scheduleInMinutes = workflow.schedule || 60 // Default to 60 minutes if not set
+        const scheduleInMinutes = workflow.schedule || 1 // Default to 1 minute if not set
         if (scheduleInMinutes >= 60 && scheduleInMinutes % 60 === 0) {
           // Display in hours if it's a whole number of hours
           setScheduleValue(scheduleInMinutes / 60)
           setScheduleUnit('hours')
         } else {
-          // Display in minutes, default to 60 if value is less than 60
-          setScheduleValue(Math.max(60, scheduleInMinutes))
+          // Display in minutes, default to 1 if value is less than 1
+          setScheduleValue(Math.max(1, scheduleInMinutes))
           setScheduleUnit('minutes')
         }
       }
@@ -107,7 +107,7 @@ export default function CreateWorkflow() {
     }
 
     // Validate schedule
-    const minScheduleValue = scheduleUnit === 'minutes' ? 60 : 1
+    const minScheduleValue = scheduleUnit === 'minutes' ? 1 : 1
     if (!scheduleValue || scheduleValue < minScheduleValue) {
       const unitText = scheduleUnit === 'minutes' ? 'minutes' : 'hours'
       alert(`Please enter a valid schedule value. The schedule must be at least ${minScheduleValue} ${unitText}.`)
@@ -311,11 +311,11 @@ export default function CreateWorkflow() {
             <div className="flex items-center gap-3">
               <input
                 type="number"
-                min={scheduleUnit === 'minutes' ? 60 : 1}
+                min={scheduleUnit === 'minutes' ? 1 : 1}
                 value={scheduleValue}
                 onChange={(e) => {
-                  const value = parseFloat(e.target.value) || (scheduleUnit === 'minutes' ? 60 : 1)
-                  const minValue = scheduleUnit === 'minutes' ? 60 : 1
+                  const value = parseFloat(e.target.value) || (scheduleUnit === 'minutes' ? 1 : 1)
+                  const minValue = scheduleUnit === 'minutes' ? 1 : 1
                   setScheduleValue(Math.max(minValue, value))
                 }}
                 className="w-24 rounded-md bg-gray-950 border border-gray-800 p-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
@@ -326,7 +326,7 @@ export default function CreateWorkflow() {
                   const newUnit = e.target.value
                   const oldUnit = scheduleUnit
                   setScheduleUnit(newUnit)
-                  // When switching to minutes, default to 60 (minimum value for minutes)
+                  // When switching to minutes, default to 1 (minimum value for minutes)
                   // When switching to hours, convert minutes to hours (rounding up to at least 1)
                   if (newUnit === 'minutes') {
                     if (oldUnit === 'hours') {
@@ -334,8 +334,8 @@ export default function CreateWorkflow() {
                       const minutes = scheduleValue * 60
                       setScheduleValue(minutes)
                     } else {
-                      // Already in minutes, ensure minimum is 60
-                      setScheduleValue(Math.max(60, scheduleValue))
+                      // Already in minutes, ensure minimum is 1
+                      setScheduleValue(Math.max(1, scheduleValue))
                     }
                   } else if (newUnit === 'hours') {
                     if (oldUnit === 'minutes') {
@@ -401,7 +401,7 @@ export default function CreateWorkflow() {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || !name.trim() || !concept.trim() || !videoWorkflowFile || (workflowType === 'image-to-video' && !imageWorkflowFile) || !scheduleValue || scheduleValue < (scheduleUnit === 'minutes' ? 60 : 1)}
+            disabled={isSaving || !name.trim() || !concept.trim() || !videoWorkflowFile || (workflowType === 'image-to-video' && !imageWorkflowFile) || !scheduleValue || scheduleValue < 1}
             className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
           >
             {isSaving ? (

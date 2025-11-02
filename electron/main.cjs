@@ -60,7 +60,10 @@ function stopPython() {
 }
 
 app.whenReady().then(() => {
-  startPython()
+  // Only start Python server in production (in dev, it's started by dev:backend)
+  if (!getIsDev()) {
+    startPython()
+  }
   createWindow()
   
   // Disable the default menu
@@ -78,7 +81,10 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  stopPython()
+  // Only stop Python if we started it (production mode)
+  if (!getIsDev()) {
+    stopPython()
+  }
 })
 
 ipcMain.handle('app:getVersion', () => app.getVersion())

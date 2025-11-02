@@ -5,16 +5,22 @@ import asyncio
 import base64
 import shutil
 import traceback
+import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Query, UploadFile, File, Form
+from fastapi import FastAPI, Query, UploadFile, File, Form, Body
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import uvicorn
 
 # Import ComfyUI client
 from comfyui_client import ComfyUIClient
+
+# Import workflow scheduler and executor
+from workflow_scheduler import initialize_scheduler, get_scheduler
+from workflow_executor import execute_workflow
 
 # Optional: OpenAI client
 try:
@@ -28,12 +34,71 @@ OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), 'outputs')
 
 PREFERENCES_PATH = os.path.join(DATA_DIR, 'preferences.json')
 HISTORY_PATH = os.path.join(DATA_DIR, 'history.json')
+WORKFLOW_STATE_PATH = os.path.join(DATA_DIR, 'workflow_state.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(WORKFLOWS_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-app = FastAPI()
+
+# Lifespan event handlers (replaces deprecated on_event)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize and cleanup workflow scheduler"""
+    try:
+        # Startup
+        def get_workflows():
+            return _get_workflows_cache()
+        
+        def get_state(workflow_id: str):
+            return _get_workflow_state(workflow_id)
+        
+        def update_state(workflow_id: str, updates: dict):
+            _update_workflow_state(workflow_id, updates)
+        
+        def exec_workflow(workflow: dict, workflow_id: str):
+            """Execute workflow with current ComfyUI settings"""
+            prefs = _read_json(PREFERENCES_PATH, {})
+            comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
+            comfyui_path = prefs.get('comfyuiPath')
+            return execute_workflow(
+                workflow=workflow,
+                workflow_id=workflow_id,
+                comfyui_url=comfyui_url,
+                comfyui_path=comfyui_path,
+                update_state_callback=update_state
+            )
+        
+        def get_prefs():
+            return _read_json(PREFERENCES_PATH, {})
+        
+        scheduler = initialize_scheduler(
+            get_workflows_callback=get_workflows,
+            get_workflow_state_callback=get_state,
+            update_workflow_state_callback=update_state,
+            execute_workflow_callback=exec_workflow,
+            get_preferences_callback=get_prefs
+        )
+        scheduler.start()
+        print("Lifespan: Scheduler started, yielding control to FastAPI")
+        
+        yield
+        
+        # Shutdown
+        print("Lifespan: Shutting down, stopping scheduler")
+        scheduler = get_scheduler()
+        if scheduler:
+            scheduler.stop()
+        else:
+            print("Lifespan: Warning - scheduler instance not found during shutdown")
+    except Exception as e:
+        print(f"Lifespan error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,6 +106,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure logging to suppress access logs for /workflows/status and /workflows/sync
+# We'll create a custom filter for uvicorn access logger
+class SuppressStatusLogFilter(logging.Filter):
+    def filter(self, record):
+        message = str(record.getMessage())
+        # Suppress logs for frequently polled endpoints
+        return "/workflows/status" not in message and "/workflows/sync" not in message
+
+# Apply the filter to uvicorn access logger
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.addFilter(SuppressStatusLogFilter())
 
 
 def _read_json(path: str, default):
@@ -78,6 +155,55 @@ def _append_history(item: dict) -> None:
     history = _read_json(HISTORY_PATH, [])
     history.insert(0, item)
     _write_json(HISTORY_PATH, history)
+
+
+# Workflow State Management Functions
+def _get_workflow_state(workflow_id: str) -> dict:
+    """Get state for a specific workflow"""
+    state = _read_json(WORKFLOW_STATE_PATH, {})
+    if workflow_id not in state:
+        # Initialize with default state
+        state[workflow_id] = {
+            "isActive": False,
+            "isRunning": False,
+            "lastExecutionTime": None,
+            "nextExecutionTime": None,
+            "lastPromptId": None,
+            "executionCount": 0
+        }
+        _write_json(WORKFLOW_STATE_PATH, state)
+    return state[workflow_id]
+
+
+def _update_workflow_state(workflow_id: str, updates: dict) -> dict:
+    """Update state for a specific workflow"""
+    state = _read_json(WORKFLOW_STATE_PATH, {})
+    if workflow_id not in state:
+        _get_workflow_state(workflow_id)  # Initialize if needed
+    
+    state[workflow_id].update(updates)
+    _write_json(WORKFLOW_STATE_PATH, state)
+    return state[workflow_id]
+
+
+def _get_all_workflow_states() -> dict:
+    """Get states for all workflows"""
+    return _read_json(WORKFLOW_STATE_PATH, {})
+
+
+# In-memory storage for workflows (synced from frontend)
+_workflows_cache = []
+
+
+def _set_workflows_cache(workflows: list):
+    """Update the workflows cache"""
+    global _workflows_cache
+    _workflows_cache = workflows
+
+
+def _get_workflows_cache() -> list:
+    """Get the workflows cache"""
+    return _workflows_cache
 
 
 def _call_llm_to_generate_workflow(prompt: str, api_key: Optional[str]) -> str:
@@ -665,6 +791,167 @@ def get_comfyui_file(
         import traceback
         print(traceback.format_exc())
         return {"error": str(e)}
+
+
+
+
+# Workflow API Endpoints
+@app.post('/workflows/sync')
+def sync_workflows(workflows: list = Body(...)):
+    """Sync workflow list from frontend"""
+    _set_workflows_cache(workflows)
+    return {"ok": True, "count": len(workflows)}
+
+
+@app.post('/workflows/{workflow_id}/activate')
+def activate_workflow(workflow_id: str):
+    """Activate a workflow"""
+    try:
+        state = _get_workflow_state(workflow_id)
+        
+        # Only activate if not already running
+        if state.get('isRunning', False):
+            return {
+                "success": False,
+                "error": "Cannot activate workflow that is currently running"
+            }
+        
+        # Calculate next execution time if not set
+        next_execution = state.get('nextExecutionTime')
+        if next_execution is None:
+            # Find workflow to get schedule
+            workflows = _get_workflows_cache()
+            workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+            if workflow:
+                schedule_minutes = workflow.get('schedule', 60)
+                from datetime import timedelta
+                next_execution_time = datetime.utcnow() + timedelta(minutes=schedule_minutes)
+                next_execution = next_execution_time.isoformat() + 'Z'
+        
+        _update_workflow_state(workflow_id, {
+            "isActive": True,
+            "nextExecutionTime": next_execution
+        })
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Workflow activated"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/workflows/{workflow_id}/deactivate')
+def deactivate_workflow(workflow_id: str):
+    """Deactivate a workflow (will stop scheduling after current execution finishes)"""
+    try:
+        _update_workflow_state(workflow_id, {
+            "isActive": False
+        })
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Workflow deactivated (current execution will finish)"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/workflows/{workflow_id}/status')
+def get_workflow_status(workflow_id: str):
+    """Get status for a specific workflow"""
+    try:
+        state = _get_workflow_state(workflow_id)
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "state": state
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/workflows/status')
+def get_all_workflows_status():
+    """Get status for all workflows"""
+    try:
+        states = _get_all_workflow_states()
+        return {
+            "success": True,
+            "states": states
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/workflows/{workflow_id}/execute')
+def execute_workflow_manual(workflow_id: str):
+    """Manually execute a workflow (for testing, bypasses schedule)"""
+    try:
+        # Find workflow
+        workflows = _get_workflows_cache()
+        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+        
+        if not workflow:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        state = _get_workflow_state(workflow_id)
+        if state.get('isRunning', False):
+            return {
+                "success": False,
+                "error": "Workflow is already running"
+            }
+        
+        # Get ComfyUI settings
+        prefs = _read_json(PREFERENCES_PATH, {})
+        comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
+        comfyui_path = prefs.get('comfyuiPath')
+        
+        # Execute in background
+        import threading
+        def execute():
+            try:
+                execute_workflow(
+                    workflow=workflow,
+                    workflow_id=workflow_id,
+                    comfyui_url=comfyui_url,
+                    comfyui_path=comfyui_path,
+                    update_state_callback=_update_workflow_state
+                )
+            except Exception as e:
+                print(f"Manual execution error: {e}")
+                _update_workflow_state(workflow_id, {"isRunning": False})
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Workflow execution started"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 if __name__ == '__main__':
