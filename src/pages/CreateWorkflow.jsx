@@ -10,13 +10,16 @@ export default function CreateWorkflow() {
   const [numberOfClips, setNumberOfClips] = useState(1)
   const [videoWorkflowFile, setVideoWorkflowFile] = useState(null)
   const [imageWorkflowFile, setImageWorkflowFile] = useState(null)
+  const [scheduleValue, setScheduleValue] = useState(1)
+  const [scheduleUnit, setScheduleUnit] = useState('hours')
   const [isSaving, setIsSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingWorkflowId, setEditingWorkflowId] = useState(null)
+  const [workflowType, setWorkflowType] = useState(null)
   const conceptTextareaRef = React.useRef(null)
 
 
-  // Load workflow data if editing
+  // Load workflow data if editing or get workflow type from selection
   React.useEffect(() => {
     // Reset any potential focus issues
     document.body.style.overflow = 'unset'
@@ -34,9 +37,35 @@ export default function CreateWorkflow() {
         setNumberOfClips(workflow.numberOfClips || 1)
         setVideoWorkflowFile(workflow.videoWorkflowFile || null)
         setImageWorkflowFile(workflow.imageWorkflowFile || null)
+        
+        // Determine workflow type based on whether image workflow file exists
+        // If imageWorkflowFile exists, it's an image-to-video workflow
+        // Otherwise, it's a text-to-video workflow
+        const detectedType = workflow.imageWorkflowFile ? 'image-to-video' : 'text-to-video'
+        setWorkflowType(detectedType)
+        
+        // Load schedule: convert from minutes to appropriate display unit
+        const scheduleInMinutes = workflow.schedule || 60 // Default to 60 minutes if not set
+        if (scheduleInMinutes >= 60 && scheduleInMinutes % 60 === 0) {
+          // Display in hours if it's a whole number of hours
+          setScheduleValue(scheduleInMinutes / 60)
+          setScheduleUnit('hours')
+        } else {
+          // Display in minutes, default to 60 if value is less than 60
+          setScheduleValue(Math.max(60, scheduleInMinutes))
+          setScheduleUnit('minutes')
+        }
       }
       // Clear the edit state after loading
       window.editingWorkflowId = null
+    } else {
+      // If not editing, check for selected workflow type from selection page
+      const selectedType = window.selectedWorkflowType
+      if (selectedType) {
+        setWorkflowType(selectedType)
+        // Clear the selected workflow type after using it
+        window.selectedWorkflowType = null
+      }
     }
     
     // Clean up any potential event listeners that might interfere
@@ -65,16 +94,40 @@ export default function CreateWorkflow() {
       return
     }
 
+    // Validate workflow files based on workflow type
+    if (!videoWorkflowFile) {
+      alert('Please select a Video Workflow file. This field is required.')
+      return
+    }
+
+    // For image-to-video workflow, image workflow file is required
+    if (workflowType === 'image-to-video' && !imageWorkflowFile) {
+      alert('Please select an Image Workflow file. This field is required.')
+      return
+    }
+
+    // Validate schedule
+    const minScheduleValue = scheduleUnit === 'minutes' ? 60 : 1
+    if (!scheduleValue || scheduleValue < minScheduleValue) {
+      const unitText = scheduleUnit === 'minutes' ? 'minutes' : 'hours'
+      alert(`Please enter a valid schedule value. The schedule must be at least ${minScheduleValue} ${unitText}.`)
+      return
+    }
+
     setIsSaving(true)
     
     try {
+      // Convert schedule to minutes
+      const scheduleInMinutes = scheduleUnit === 'hours' ? scheduleValue * 60 : scheduleValue
+      
       const workflowData = {
         name: name.trim(),
         concept: concept.trim(),
         clipDuration,
         numberOfClips,
         videoWorkflowFile,
-        imageWorkflowFile
+        imageWorkflowFile,
+        schedule: scheduleInMinutes
       }
 
       let result
@@ -100,7 +153,10 @@ export default function CreateWorkflow() {
   }
 
   const handleBack = () => {
-    const ev = new CustomEvent('navigate', { detail: 'ai-composer' })
+    // If editing, go back to AI Workflows page
+    // If creating new, go back to Workflow Type Selection page
+    const navigateTo = isEditing ? 'ai-composer' : 'workflow-type-selection'
+    const ev = new CustomEvent('navigate', { detail: navigateTo })
     window.dispatchEvent(ev)
   }
 
@@ -162,7 +218,7 @@ export default function CreateWorkflow() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <label className="block text-sm font-medium text-gray-200">
-                Name
+                Name <span className="text-red-400">*</span>
               </label>
               <Tooltip content="Give your workflow a descriptive name">
                 <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
@@ -181,7 +237,7 @@ export default function CreateWorkflow() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <label className="block text-sm font-medium text-gray-200">
-                Concept
+                Concept <span className="text-red-400">*</span>
               </label>
               <Tooltip content="Describe the main concept/theme of videos">
                 <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
@@ -242,11 +298,67 @@ export default function CreateWorkflow() {
             </div>
           </div>
 
+          {/* Schedule Field */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-200">
+                Schedule <span className="text-red-400">*</span>
+              </label>
+              <Tooltip content="Set how often this workflow should run automatically">
+                <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
+              </Tooltip>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={scheduleUnit === 'minutes' ? 60 : 1}
+                value={scheduleValue}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || (scheduleUnit === 'minutes' ? 60 : 1)
+                  const minValue = scheduleUnit === 'minutes' ? 60 : 1
+                  setScheduleValue(Math.max(minValue, value))
+                }}
+                className="w-24 rounded-md bg-gray-950 border border-gray-800 p-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              />
+              <select
+                value={scheduleUnit}
+                onChange={(e) => {
+                  const newUnit = e.target.value
+                  const oldUnit = scheduleUnit
+                  setScheduleUnit(newUnit)
+                  // When switching to minutes, default to 60 (minimum value for minutes)
+                  // When switching to hours, convert minutes to hours (rounding up to at least 1)
+                  if (newUnit === 'minutes') {
+                    if (oldUnit === 'hours') {
+                      // Convert hours to minutes
+                      const minutes = scheduleValue * 60
+                      setScheduleValue(minutes)
+                    } else {
+                      // Already in minutes, ensure minimum is 60
+                      setScheduleValue(Math.max(60, scheduleValue))
+                    }
+                  } else if (newUnit === 'hours') {
+                    if (oldUnit === 'minutes') {
+                      // Convert minutes to hours, rounding up to at least 1
+                      const hours = Math.max(1, Math.round(scheduleValue / 60))
+                      setScheduleValue(hours)
+                    }
+                    // If already in hours, keep the value as is (default is 1)
+                  }
+                }}
+                className="rounded-md bg-gray-950 border border-gray-800 p-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              >
+                <option value="minutes">minutes</option>
+                <option value="hours">hours</option>
+              </select>
+            </div>
+          </div>
+
           {/* Video Model Dropdown */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <label className="block text-sm font-medium text-gray-200">
-                Video Model
+                Video Model <span className="text-red-400">*</span>
               </label>
               <Tooltip content="Select the AI model for video generation">
                 <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
@@ -259,22 +371,24 @@ export default function CreateWorkflow() {
             />
           </div>
 
-          {/* Image Model Dropdown */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <label className="block text-sm font-medium text-gray-200">
-                Image Model
-              </label>
-              <Tooltip content="Select the AI model for image generation (if needed for the workflow)">
-                <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
-              </Tooltip>
+          {/* Image Model Dropdown - Only show if workflow type is image-to-video */}
+          {workflowType === 'image-to-video' ? (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="block text-sm font-medium text-gray-200">
+                  Image Model <span className="text-red-400">*</span>
+                </label>
+                <Tooltip content="Select the AI model for image generation (if needed for the workflow)">
+                  <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
+                </Tooltip>
+              </div>
+              <WorkflowFileUpload
+                value={imageWorkflowFile}
+                onChange={setImageWorkflowFile}
+                label="Image Workflow"
+              />
             </div>
-            <WorkflowFileUpload
-              value={imageWorkflowFile}
-              onChange={setImageWorkflowFile}
-              label="Image Workflow"
-            />
-          </div>
+          ) : null}
         </div>
 
         {/* Action Buttons */}
@@ -287,7 +401,7 @@ export default function CreateWorkflow() {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || !concept.trim()}
+            disabled={isSaving || !name.trim() || !concept.trim() || !videoWorkflowFile || (workflowType === 'image-to-video' && !imageWorkflowFile) || !scheduleValue || scheduleValue < (scheduleUnit === 'minutes' ? 60 : 1)}
             className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
           >
             {isSaving ? (

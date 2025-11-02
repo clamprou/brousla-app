@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock } from 'lucide-react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
 
 export default function AIWorkflows() {
   const [workflows, setWorkflows] = useState([])
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, workflowId: null, workflowName: '' })
+  const [isHelpSectionExpanded, setIsHelpSectionExpanded] = useState(false)
 
   // Load workflows on component mount and listen for updates
   useEffect(() => {
@@ -58,7 +59,8 @@ export default function AIWorkflows() {
   ]
 
   const navigateToCreateWorkflow = () => {
-    const ev = new CustomEvent('navigate', { detail: 'create-workflow' })
+    // Navigate to workflow type selection page first
+    const ev = new CustomEvent('navigate', { detail: 'workflow-type-selection' })
     window.dispatchEvent(ev)
   }
 
@@ -113,22 +115,22 @@ export default function AIWorkflows() {
       </div>
 
       {/* Workflows List */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-200">Your Workflows</h3>
-          <div className="text-sm text-gray-400">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 mb-8">
+        <div className="flex items-center justify-between mb-8">
+          <h3 className="text-xl font-semibold text-gray-200">Your Workflows</h3>
+          <div className="text-base text-gray-400">
             {workflows.length} workflow{workflows.length !== 1 ? 's' : ''}
           </div>
         </div>
         
         {workflows.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {workflows.map((workflow) => (
-              <div key={workflow.id} className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:bg-gray-750 transition-colors">
+              <div key={workflow.id} className="bg-gray-800 border border-gray-700 rounded-lg p-5 hover:bg-gray-750 transition-colors">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h4 className="font-medium text-gray-200">{workflow.name}</h4>
+                    <div className="flex items-center gap-3 mb-3">
+                      <h4 className="font-medium text-base text-gray-200">{workflow.name}</h4>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         workflow.status === 'active' 
                           ? 'bg-green-600/20 text-green-400 border border-green-600/30' 
@@ -140,11 +142,22 @@ export default function AIWorkflows() {
                         {workflow.numberOfClips} clips
                       </span>
                     </div>
-                    <p className="text-sm text-gray-400 mb-3">{workflow.description}</p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <p className="text-sm text-gray-400 mb-4">{workflow.description}</p>
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
                       <div className="flex items-center gap-1">
                         <Workflow className="h-3 w-3" />
                         {workflow.steps} steps
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Timer className="h-3 w-3" />
+                        {(() => {
+                          const scheduleMinutes = workflow.schedule || 60
+                          if (scheduleMinutes >= 60 && scheduleMinutes % 60 === 0) {
+                            return `Every ${scheduleMinutes / 60} hour${scheduleMinutes / 60 !== 1 ? 's' : ''}`
+                          } else {
+                            return `Every ${scheduleMinutes} minute${scheduleMinutes !== 1 ? 's' : ''}`
+                          }
+                        })()}
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -179,12 +192,12 @@ export default function AIWorkflows() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-800 rounded-full mb-4">
-              <Workflow className="h-6 w-6 text-gray-500" />
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-800 rounded-full mb-6">
+              <Workflow className="h-8 w-8 text-gray-500" />
             </div>
-            <h4 className="text-gray-300 font-medium mb-2">No workflows yet</h4>
-            <p className="text-gray-500 text-sm mb-4">Create your first workflow to get started with AI-powered content generation</p>
+            <h4 className="text-gray-300 font-medium text-lg mb-3">No workflows yet</h4>
+            <p className="text-gray-500 text-base mb-6">Create your first workflow to get started with AI-powered content generation</p>
             <button 
               onClick={navigateToCreateWorkflow}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
@@ -194,61 +207,6 @@ export default function AIWorkflows() {
             </button>
           </div>
         )}
-      </div>
-
-      {/* Main Description Card */}
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-700 rounded-xl p-8 mb-8">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600/20 rounded-full mb-4">
-            <Sparkles className="h-8 w-8 text-blue-400" />
-          </div>
-          <h2 className="text-xl font-semibold text-gray-100 mb-3">Advanced AI Workflows</h2>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            Design sophisticated, multi-step content creation pipelines that combine multiple AI models 
-            and automation tools. Create autonomous workflows that can handle complex content generation 
-            tasks from start to finish.
-          </p>
-        </div>
-      </div>
-
-      {/* Features Grid */}
-      <div className="grid md:grid-cols-3 gap-6 mb-8">
-        {features.map((feature, index) => (
-          <div key={index} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2 bg-blue-600/20 rounded-lg">
-                <feature.icon className="h-5 w-5 text-blue-400" />
-              </div>
-              <h3 className="font-semibold text-gray-200">{feature.title}</h3>
-            </div>
-            <p className="text-sm text-gray-400">{feature.description}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Example Workflows */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-gray-200 mb-4">Example Workflow Templates</h3>
-        <div className="grid md:grid-cols-3 gap-4">
-          {exampleWorkflows.map((workflow, index) => (
-            <div key={index} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-              <h4 className="font-medium text-gray-200 mb-3">{workflow.title}</h4>
-              <div className="space-y-2">
-                {workflow.steps.map((step, stepIndex) => (
-                  <div key={stepIndex} className="flex items-center gap-2 text-sm">
-                    <div className="flex items-center justify-center w-6 h-6 bg-gray-700 rounded-full text-xs text-gray-300">
-                      {stepIndex + 1}
-                    </div>
-                    <span className="text-gray-400">{step}</span>
-                    {stepIndex < workflow.steps.length - 1 && (
-                      <ArrowRight className="h-3 w-3 text-gray-500 ml-auto" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Confirmation Modal */}
@@ -262,6 +220,83 @@ export default function AIWorkflows() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {/* Help Section - Expandable */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setIsHelpSectionExpanded(!isHelpSectionExpanded)}
+          className="w-full flex items-center justify-between p-6 hover:bg-gray-800/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-blue-400" />
+            <h3 className="text-lg font-semibold text-gray-200">Learn About AI Workflows</h3>
+          </div>
+          {isHelpSectionExpanded ? (
+            <ChevronUp className="h-5 w-5 text-gray-400" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-gray-400" />
+          )}
+        </button>
+        
+        {isHelpSectionExpanded && (
+          <div className="px-6 pb-6 space-y-6">
+            {/* Main Description Card */}
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-8">
+              <div className="text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600/20 rounded-full mb-4">
+                  <Sparkles className="h-8 w-8 text-blue-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-100 mb-3">Advanced AI Workflows</h2>
+                <p className="text-gray-400 max-w-2xl mx-auto">
+                  Design sophisticated, multi-step content creation pipelines that combine multiple AI models 
+                  and automation tools. Create autonomous workflows that can handle complex content generation 
+                  tasks from start to finish.
+                </p>
+              </div>
+            </div>
+
+            {/* Features Grid */}
+            <div className="grid md:grid-cols-3 gap-6">
+              {features.map((feature, index) => (
+                <div key={index} className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 bg-blue-600/20 rounded-lg">
+                      <feature.icon className="h-5 w-5 text-blue-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-200">{feature.title}</h3>
+                  </div>
+                  <p className="text-sm text-gray-400">{feature.description}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Example Workflows */}
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-gray-200 mb-4">Example Workflow Templates</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                {exampleWorkflows.map((workflow, index) => (
+                  <div key={index} className="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                    <h4 className="font-medium text-gray-200 mb-3">{workflow.title}</h4>
+                    <div className="space-y-2">
+                      {workflow.steps.map((step, stepIndex) => (
+                        <div key={stepIndex} className="flex items-center gap-2 text-sm">
+                          <div className="flex items-center justify-center w-6 h-6 bg-gray-700 rounded-full text-xs text-gray-300">
+                            {stepIndex + 1}
+                          </div>
+                          <span className="text-gray-400">{step}</span>
+                          {stepIndex < workflow.steps.length - 1 && (
+                            <ArrowRight className="h-3 w-3 text-gray-500 ml-auto" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
     </div>
   )
