@@ -24,7 +24,7 @@ from workflow_executor import execute_workflow
 
 # Optional: OpenAI client
 try:
-    from openai import OpenAI
+    from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover
     OpenAI = None  # type: ignore
 
@@ -637,11 +637,14 @@ async def generate_image_to_video(
         
         print(f"Parsed image-to-video parameters: fps={fps_int}, steps={steps_int}, length={length_int}, seed={seed_int}")
         
+        # Ensure filename is not None (provide default if missing)
+        image_filename = image_file.filename or "image.png"
+        
         # Queue workflow and get prompt_id immediately
         prompt_id = _queue_comfyui_image_to_video(
             workflow_json, 
             image_content, 
-            image_file.filename, 
+            image_filename, 
             comfyui_url,
             comfyui_path,
             positive_prompt if positive_prompt else None,
@@ -805,7 +808,7 @@ def sync_workflows(workflows: list = Body(...)):
 
 @app.post('/workflows/{workflow_id}/activate')
 def activate_workflow(workflow_id: str):
-    """Activate a workflow"""
+    """Activate a workflow and start immediate execution"""
     try:
         state = _get_workflow_state(workflow_id)
         
@@ -816,27 +819,51 @@ def activate_workflow(workflow_id: str):
                 "error": "Cannot activate workflow that is currently running"
             }
         
-        # Calculate next execution time if not set
-        next_execution = state.get('nextExecutionTime')
-        if next_execution is None:
-            # Find workflow to get schedule
-            workflows = _get_workflows_cache()
-            workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
-            if workflow:
-                schedule_minutes = workflow.get('schedule', 60)
-                from datetime import timedelta
-                next_execution_time = datetime.utcnow() + timedelta(minutes=schedule_minutes)
-                next_execution = next_execution_time.isoformat() + 'Z'
-        
+        # Set workflow to active and clear nextExecutionTime to trigger immediate execution
         _update_workflow_state(workflow_id, {
             "isActive": True,
-            "nextExecutionTime": next_execution
+            "nextExecutionTime": None  # Set to None so scheduler executes immediately
         })
+        
+        # Find workflow to trigger immediate execution
+        workflows = _get_workflows_cache()
+        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+        
+        if not workflow:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        # Get ComfyUI settings
+        prefs = _read_json(PREFERENCES_PATH, {})
+        comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
+        comfyui_path = prefs.get('comfyuiPath')
+        
+        # Execute immediately in background thread
+        import threading
+        def execute():
+            try:
+                execute_workflow(
+                    workflow=workflow,
+                    workflow_id=workflow_id,
+                    comfyui_url=comfyui_url,
+                    comfyui_path=comfyui_path,
+                    update_state_callback=_update_workflow_state
+                )
+            except Exception as e:
+                print(f"Workflow activation execution error: {e}")
+                import traceback
+                traceback.print_exc()
+                _update_workflow_state(workflow_id, {"isRunning": False})
+        
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
         
         return {
             "success": True,
             "workflow_id": workflow_id,
-            "message": "Workflow activated"
+            "message": "Workflow activated and execution started"
         }
     except Exception as e:
         return {

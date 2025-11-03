@@ -55,6 +55,9 @@ def execute_workflow(
         
         if is_image_to_video:
             # Sequential execution: image first, then video
+            # Type assertion: image_workflow is guaranteed to be non-None here due to earlier check
+            if not image_workflow:
+                raise Exception("Image-to-video workflow missing imageWorkflowFile")
             return _execute_image_to_video_workflow(
                 workflow_id=workflow_id,
                 concept=concept,
@@ -97,7 +100,8 @@ def _execute_text_to_video_workflow(
     video_workflow: Dict,
     comfyui_url: str,
     schedule_minutes: int,
-    update_state_callback=None
+    update_state_callback=None,
+    get_state_callback=None
 ) -> Dict:
     """Execute a text-to-video workflow"""
     try:
@@ -180,7 +184,8 @@ def _execute_image_to_video_workflow(
     comfyui_url: str,
     comfyui_path: Optional[str],
     schedule_minutes: int,
-    update_state_callback=None
+    update_state_callback=None,
+    get_state_callback=None
 ) -> Dict:
     """Execute an image-to-video workflow (generate image first, then video)"""
     try:

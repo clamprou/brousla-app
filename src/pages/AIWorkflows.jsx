@@ -256,10 +256,6 @@ export default function AIWorkflows() {
                     <p className="text-sm text-gray-400 mb-4">{workflow.description}</p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
                       <div className="flex items-center gap-1">
-                        <Workflow className="h-3 w-3" />
-                        {workflow.steps} steps
-                      </div>
-                      <div className="flex items-center gap-1">
                         <Timer className="h-3 w-3" />
                         {(() => {
                           const scheduleMinutes = workflow.schedule || 60
