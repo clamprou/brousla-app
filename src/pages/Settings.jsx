@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, FolderOpen, CheckCircle, AlertCircle, Server } from 'lucide-react'
+import { Settings as SettingsIcon, FolderOpen, CheckCircle, AlertCircle, Server, Bot } from 'lucide-react'
 import { settingsManager } from '../utils/settingsManager.js'
 import ErrorModal from '../components/ErrorModal.jsx'
 
 export default function Settings() {
   const [settings, setSettings] = useState({})
   const [isSelectingFolder, setIsSelectingFolder] = useState(false)
+  const [isSelectingOutputFolder, setIsSelectingOutputFolder] = useState(false)
   const [comfyuiServerUrl, setComfyuiServerUrl] = useState('http://127.0.0.1:8188')
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '' })
 
@@ -18,6 +19,22 @@ export default function Settings() {
     if (prefs.comfyUiServer) {
       setComfyuiServerUrl(prefs.comfyUiServer)
     }
+
+    // Sync output folder from backend preferences
+    const syncOutputFolderFromBackend = async () => {
+      try {
+        const backendPrefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+        if (backendPrefs.aiWorkflowsOutputFolder) {
+          const currentFolder = settingsManager.getAIWorkflowsOutputFolder()
+          if (currentFolder !== backendPrefs.aiWorkflowsOutputFolder) {
+            settingsManager.setAIWorkflowsOutputFolder(backendPrefs.aiWorkflowsOutputFolder)
+          }
+        }
+      } catch (error) {
+        console.error('Error syncing output folder from backend:', error)
+      }
+    }
+    syncOutputFolderFromBackend()
 
     // Listen for settings updates
     const handleSettingsUpdate = (event) => {
@@ -125,8 +142,99 @@ export default function Settings() {
     }
   }
 
+  const handleSelectOutputFolder = async () => {
+    setIsSelectingOutputFolder(true)
+    
+    try {
+      // Use Electron's dialog if available (for desktop app)
+      if (window.electronAPI && window.electronAPI.selectFolder) {
+        const result = await window.electronAPI.selectFolder()
+        if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
+          const selectedPath = result.filePaths[0]
+          settingsManager.setAIWorkflowsOutputFolder(selectedPath)
+          
+          // Sync to backend preferences
+          try {
+            const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+            prefs.aiWorkflowsOutputFolder = selectedPath
+            await fetch('http://127.0.0.1:8000/preferences', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(prefs)
+            })
+          } catch (error) {
+            console.error('Error syncing output folder to backend:', error)
+          }
+        }
+      } else {
+        // Fallback for web version - use input with directory attribute
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.webkitdirectory = true
+        input.directory = true
+        
+        input.onchange = async (event) => {
+          const files = event.target.files
+          if (files && files.length > 0) {
+            // Get the directory path from the first file
+            const path = files[0].webkitRelativePath.split('/')[0]
+            settingsManager.setAIWorkflowsOutputFolder(path)
+            
+            // Sync to backend preferences
+            try {
+              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              prefs.aiWorkflowsOutputFolder = path
+              await fetch('http://127.0.0.1:8000/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(prefs)
+              })
+            } catch (error) {
+              console.error('Error syncing output folder to backend:', error)
+            }
+          }
+        }
+        
+        input.click()
+      }
+    } catch (error) {
+      console.error('Error selecting output folder:', error)
+      setErrorModal({
+        isOpen: true,
+        title: 'Error Selecting Folder',
+        message: `Failed to select output folder: ${error.message}`
+      })
+    } finally {
+      setIsSelectingOutputFolder(false)
+    }
+  }
+
+  const getOutputFolderStatus = () => {
+    if (settings.aiWorkflowsOutputFolder) {
+      return {
+        status: 'configured',
+        icon: CheckCircle,
+        color: 'text-green-400',
+        bgColor: 'bg-green-600/20',
+        borderColor: 'border-green-600/30',
+        message: 'AI Workflows output folder configured'
+      }
+    } else {
+      return {
+        status: 'not_configured',
+        icon: AlertCircle,
+        color: 'text-yellow-400',
+        bgColor: 'bg-yellow-600/20',
+        borderColor: 'border-yellow-600/30',
+        message: 'AI Workflows output folder not configured'
+      }
+    }
+  }
+
   const comfyuiStatus = getComfyUIStatus()
   const StatusIcon = comfyuiStatus.icon
+  const outputFolderStatus = getOutputFolderStatus()
+  const OutputFolderStatusIcon = outputFolderStatus.icon
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -227,6 +335,82 @@ export default function Settings() {
               <li>Only valid ComfyUI installations will be accepted</li>
               <li>The application will use this path to start ComfyUI in the background when needed</li>
             </ol>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Workflows Output Folder Configuration Section */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-blue-600/20 rounded-lg">
+            <Bot className="h-5 w-5 text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-200">AI Workflows Output Folder</h2>
+            <p className="text-sm text-gray-400">Configure where generated videos from AI Workflows will be saved</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Status Display */}
+          <div className={`flex items-center gap-3 p-4 rounded-lg border ${outputFolderStatus.bgColor} ${outputFolderStatus.borderColor}`}>
+            <OutputFolderStatusIcon className={`h-5 w-5 ${outputFolderStatus.color}`} />
+            <div className="flex-1">
+              <p className={`text-sm font-medium ${outputFolderStatus.color}`}>
+                {outputFolderStatus.message}
+              </p>
+              {settings.aiWorkflowsOutputFolder && (
+                <p className="text-xs text-gray-400 mt-1 font-mono">
+                  {settings.aiWorkflowsOutputFolder}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Folder Selection Button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSelectOutputFolder}
+              disabled={isSelectingOutputFolder}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
+            >
+              <FolderOpen className="h-4 w-4" />
+              {isSelectingOutputFolder ? 'Selecting...' : settings.aiWorkflowsOutputFolder ? 'Change Output Folder' : 'Select Output Folder'}
+            </button>
+            
+            {settings.aiWorkflowsOutputFolder && (
+              <button
+                onClick={async () => {
+                  settingsManager.setAIWorkflowsOutputFolder(null)
+                  // Sync to backend preferences
+                  try {
+                    const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+                    prefs.aiWorkflowsOutputFolder = null
+                    await fetch('http://127.0.0.1:8000/preferences', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(prefs)
+                    })
+                  } catch (error) {
+                    console.error('Error syncing output folder to backend:', error)
+                  }
+                }}
+                className="px-3 py-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg font-medium transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Help Text */}
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">About AI Workflows Output Folder:</h4>
+            <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
+              <li>All videos generated by AI Workflows will be saved to this folder</li>
+              <li>You must configure this folder before using AI Workflows</li>
+              <li>The folder will be created automatically if it doesn't exist</li>
+              <li>Make sure you have write permissions for the selected folder</li>
+            </ul>
           </div>
         </div>
       </div>

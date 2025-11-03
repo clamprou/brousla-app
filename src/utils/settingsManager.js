@@ -6,7 +6,8 @@ class SettingsManager {
       comfyuiValidation: null, // Stores validation result
       comfyuiServer: 'http://localhost:8188',
       openaiApiKey: null,
-      defaultWorkflow: null
+      defaultWorkflow: null,
+      aiWorkflowsOutputFolder: null
     }
     this.loadFromStorage()
   }
@@ -53,6 +54,20 @@ class SettingsManager {
 
   getComfyUIPath() {
     return this.settings.comfyuiPath
+  }
+
+  setAIWorkflowsOutputFolder(path) {
+    this.settings.aiWorkflowsOutputFolder = path
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+
+  getAIWorkflowsOutputFolder() {
+    return this.settings.aiWorkflowsOutputFolder
   }
 
   getSettings() {

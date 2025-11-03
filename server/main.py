@@ -61,11 +61,13 @@ async def lifespan(app: FastAPI):
             prefs = _read_json(PREFERENCES_PATH, {})
             comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
             comfyui_path = prefs.get('comfyuiPath')
+            output_folder = prefs.get('aiWorkflowsOutputFolder')
             return execute_workflow(
                 workflow=workflow,
                 workflow_id=workflow_id,
                 comfyui_url=comfyui_url,
                 comfyui_path=comfyui_path,
+                output_folder=output_folder,
                 update_state_callback=update_state
             )
         
@@ -839,6 +841,7 @@ def activate_workflow(workflow_id: str):
         prefs = _read_json(PREFERENCES_PATH, {})
         comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
         comfyui_path = prefs.get('comfyuiPath')
+        output_folder = prefs.get('aiWorkflowsOutputFolder')
         
         # Execute immediately in background thread
         import threading
@@ -849,6 +852,7 @@ def activate_workflow(workflow_id: str):
                     workflow_id=workflow_id,
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
+                    output_folder=output_folder,
                     update_state_callback=_update_workflow_state
                 )
             except Exception as e:
@@ -950,6 +954,7 @@ def execute_workflow_manual(workflow_id: str):
         prefs = _read_json(PREFERENCES_PATH, {})
         comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
         comfyui_path = prefs.get('comfyuiPath')
+        output_folder = prefs.get('aiWorkflowsOutputFolder')
         
         # Execute in background
         import threading
@@ -960,6 +965,7 @@ def execute_workflow_manual(workflow_id: str):
                     workflow_id=workflow_id,
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
+                    output_folder=output_folder,
                     update_state_callback=_update_workflow_state
                 )
             except Exception as e:

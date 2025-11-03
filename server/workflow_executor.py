@@ -5,6 +5,7 @@ Handles execution of text-to-video and image-to-video workflows via ComfyUI.
 import os
 import json
 import time
+import shutil
 import requests
 from typing import Dict, Optional
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ def execute_workflow(
     workflow_id: str,
     comfyui_url: str = "http://127.0.0.1:8188",
     comfyui_path: Optional[str] = None,
+    output_folder: Optional[str] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
@@ -26,6 +28,7 @@ def execute_workflow(
         workflow_id: Unique workflow identifier
         comfyui_url: ComfyUI server URL
         comfyui_path: Path to ComfyUI installation
+        output_folder: Path to folder where final videos should be saved
         update_state_callback: Function to call for state updates (workflow_id, updates_dict)
     
     Returns:
@@ -65,6 +68,7 @@ def execute_workflow(
                 video_workflow=video_workflow,
                 comfyui_url=comfyui_url,
                 comfyui_path=comfyui_path,
+                output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
@@ -76,6 +80,8 @@ def execute_workflow(
                 concept=concept,
                 video_workflow=video_workflow,
                 comfyui_url=comfyui_url,
+                comfyui_path=comfyui_path,
+                output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
@@ -99,6 +105,8 @@ def _execute_text_to_video_workflow(
     concept: str,
     video_workflow: Dict,
     comfyui_url: str,
+    comfyui_path: Optional[str],
+    output_folder: Optional[str],
     schedule_minutes: int,
     update_state_callback=None,
     get_state_callback=None
@@ -147,7 +155,17 @@ def _execute_text_to_video_workflow(
         # Step 2: Poll for completion
         _poll_for_completion(prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
         
-        # Step 3: Update state after completion
+        # Step 3: Get result and copy to output folder if specified
+        if output_folder:
+            _copy_video_to_output_folder(
+                prompt_id=prompt_id,
+                workflow_id=workflow_id,
+                comfyui_url=comfyui_url,
+                comfyui_path=comfyui_path,
+                output_folder=output_folder
+            )
+        
+        # Step 4: Update state after completion
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
             # Get current execution count and increment
@@ -183,6 +201,7 @@ def _execute_image_to_video_workflow(
     video_workflow: Dict,
     comfyui_url: str,
     comfyui_path: Optional[str],
+    output_folder: Optional[str],
     schedule_minutes: int,
     update_state_callback=None,
     get_state_callback=None
@@ -290,6 +309,16 @@ def _execute_image_to_video_workflow(
         # Poll for video completion
         _poll_for_completion(video_prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
         
+        # Get result and copy to output folder if specified
+        if output_folder:
+            _copy_video_to_output_folder(
+                prompt_id=video_prompt_id,
+                workflow_id=workflow_id,
+                comfyui_url=comfyui_url,
+                comfyui_path=comfyui_path,
+                output_folder=output_folder
+            )
+        
         # Update state after completion
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
@@ -349,6 +378,87 @@ def _poll_for_completion(prompt_id: str, comfyui_url: str, timeout: int = 300) -
         time.sleep(poll_interval)
     
     raise TimeoutError(f"Workflow execution timed out after {timeout} seconds")
+
+
+def _copy_video_to_output_folder(
+    prompt_id: str,
+    workflow_id: str,
+    comfyui_url: str,
+    comfyui_path: Optional[str],
+    output_folder: Optional[str]
+) -> None:
+    """
+    Copy the generated video file from ComfyUI output directory to user-specified output folder.
+    
+    Args:
+        prompt_id: ComfyUI prompt ID for the completed video generation
+        workflow_id: Workflow identifier for filename generation
+        comfyui_url: ComfyUI server URL
+        comfyui_path: Path to ComfyUI installation
+        output_folder: Path to folder where video should be saved
+    """
+    if not output_folder:
+        return
+    
+    try:
+        # Get the result from the backend
+        result_response = requests.get(
+            f'http://127.0.0.1:8000/result/{prompt_id}',
+            params={
+                'comfyui_url': comfyui_url,
+                'comfyui_path': comfyui_path or ''
+            },
+            timeout=30
+        )
+        
+        if result_response.status_code != 200:
+            print(f"Warning: Failed to get result for prompt {prompt_id}: {result_response.status_code}")
+            return
+        
+        result = result_response.json()
+        if not result.get('success'):
+            print(f"Warning: Failed to get result for prompt {prompt_id}: {result.get('error', 'Unknown error')}")
+            return
+        
+        filename = result.get('filename')
+        subfolder = result.get('subfolder', '')
+        
+        if not filename:
+            print(f"Warning: No filename in result for prompt {prompt_id}")
+            return
+        
+        # Construct source path in ComfyUI output directory
+        if not comfyui_path or not os.path.exists(comfyui_path):
+            print(f"Warning: ComfyUI path not configured or invalid: {comfyui_path}")
+            return
+        
+        comfyui_output_dir = os.path.join(comfyui_path, "ComfyUI", "output")
+        if subfolder:
+            comfyui_output_dir = os.path.join(comfyui_output_dir, subfolder)
+        
+        source_path = os.path.join(comfyui_output_dir, filename)
+        
+        if not os.path.exists(source_path):
+            print(f"Warning: Video file not found at {source_path}")
+            return
+        
+        # Create output folder if it doesn't exist
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # Generate unique filename: timestamp_workflowid_originalname
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        file_ext = os.path.splitext(filename)[1]
+        output_filename = f"{timestamp}_{workflow_id[:8]}{file_ext}"
+        dest_path = os.path.join(output_folder, output_filename)
+        
+        # Copy file to output folder
+        shutil.copy2(source_path, dest_path)
+        print(f"Successfully copied video to {dest_path}")
+        
+    except Exception as e:
+        print(f"Error copying video to output folder: {str(e)}")
+        # Don't raise exception - workflow should still be considered successful
+        # even if copying fails
 
 
 

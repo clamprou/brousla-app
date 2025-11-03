@@ -13,17 +13,27 @@ import WorkflowTypeSelection from './pages/WorkflowTypeSelection.jsx'
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [activeKey, setActiveKey] = useState('text-to-image')
+  const previousKeyRef = React.useRef('text-to-image')
 
   // Global navigation event to allow pages to trigger navigation without props drilling
   React.useEffect(() => {
     const handler = (e) => {
       const key = e?.detail
       if (typeof key === 'string') {
+        // Store previous key before navigating (unless navigating back)
+        if (key !== activeKey) {
+          previousKeyRef.current = activeKey
+        }
         setActiveKey(key)
       }
     }
     window.addEventListener('navigate', handler)
     return () => window.removeEventListener('navigate', handler)
+  }, [activeKey])
+
+  // Expose function to get previous page
+  React.useEffect(() => {
+    window.getPreviousPage = () => previousKeyRef.current
   }, [])
 
   const items = useMemo(() => ([
@@ -67,7 +77,12 @@ export default function App() {
           activeKey={activeKey}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed(v => !v)}
-          onSelect={setActiveKey}
+          onSelect={(key) => {
+            if (key !== activeKey) {
+              previousKeyRef.current = activeKey
+            }
+            setActiveKey(key)
+          }}
         />
         <div className="flex-1 overflow-auto">
           {page}

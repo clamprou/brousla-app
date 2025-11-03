@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
+import OutputFolderModal from '../components/OutputFolderModal.jsx'
+import { settingsManager } from '../utils/settingsManager.js'
 
 const BACKEND_URL = 'http://127.0.0.1:8000'
 
@@ -11,6 +13,7 @@ export default function AIWorkflows() {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, workflowId: null, workflowName: '' })
   const [isHelpSectionExpanded, setIsHelpSectionExpanded] = useState(false)
   const [activatingWorkflow, setActivatingWorkflow] = useState(null)
+  const [showOutputFolderModal, setShowOutputFolderModal] = useState(false)
 
   // Load workflow states from backend
   const loadWorkflowStates = React.useCallback(async () => {
@@ -24,6 +27,27 @@ export default function AIWorkflows() {
       }
     } catch (error) {
       console.error('Error loading workflow states:', error)
+    }
+  }, [])
+
+  // Check if output folder is set when component mounts
+  useEffect(() => {
+    const outputFolder = settingsManager.getAIWorkflowsOutputFolder()
+    if (!outputFolder) {
+      setShowOutputFolderModal(true)
+    }
+
+    // Listen for settings updates
+    const handleSettingsUpdate = () => {
+      const updatedOutputFolder = settingsManager.getAIWorkflowsOutputFolder()
+      if (updatedOutputFolder) {
+        setShowOutputFolderModal(false)
+      }
+    }
+
+    window.addEventListener('settingsUpdated', handleSettingsUpdate)
+    return () => {
+      window.removeEventListener('settingsUpdated', handleSettingsUpdate)
     }
   }, [])
 
@@ -183,8 +207,8 @@ export default function AIWorkflows() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
+        {/* Header */}
+        <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-600/20 rounded-lg">
@@ -337,18 +361,6 @@ export default function AIWorkflows() {
         )}
       </div>
 
-      {/* Confirmation Modal */}
-      <ConfirmationModal
-        isOpen={deleteModal.isOpen}
-        onClose={closeDeleteModal}
-        onConfirm={confirmDelete}
-        title="Delete Workflow"
-        message={`Are you sure you want to delete "${deleteModal.workflowName}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        type="danger"
-      />
-
       {/* Help Section - Expandable */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <button
@@ -426,6 +438,25 @@ export default function AIWorkflows() {
         )}
       </div>
 
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDelete}
+        title="Delete Workflow"
+        message={`Are you sure you want to delete "${deleteModal.workflowName}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      {/* Output Folder Modal */}
+      <OutputFolderModal
+        isOpen={showOutputFolderModal}
+        onClose={() => setShowOutputFolderModal(false)}
+        onFolderSelected={() => setShowOutputFolderModal(false)}
+        navigateBackOnClose={true}
+      />
     </div>
   )
 }
