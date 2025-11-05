@@ -294,9 +294,6 @@ export default function AIWorkflows() {
                         <Clock className="h-3 w-3" />
                         Created: {new Date(workflow.createdAt).toLocaleDateString()}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span>Duration: {workflow.clipDuration}s</span>
-                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4">

@@ -31,16 +31,21 @@ class WorkflowManager {
       name: workflowData.name || this.generateWorkflowName(workflowData.concept),
       description: workflowData.description || workflowData.concept,
       concept: workflowData.concept,
-      clipDuration: workflowData.clipDuration,
       numberOfClips: workflowData.numberOfClips,
       videoWorkflowFile: workflowData.videoWorkflowFile,
       imageWorkflowFile: workflowData.imageWorkflowFile,
       schedule: workflowData.schedule || 1, // Default to 1 minute if not provided
+      negativePrompt: workflowData.negativePrompt || '',
+      width: workflowData.width || '',
+      height: workflowData.height || '',
+      fps: workflowData.fps || '',
+      steps: workflowData.steps || '',
+      length: workflowData.length || '',
+      seed: workflowData.seed || '',
       status: 'draft',
       lastRun: null,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      steps: 2 // Basic workflow: generate images + create videos
+      updatedAt: new Date().toISOString()
     }
 
     this.workflows.unshift(newWorkflow) // Add to beginning
@@ -70,11 +75,17 @@ class WorkflowManager {
       name: workflowData.name || existingWorkflow.name,
       description: workflowData.description || workflowData.concept || existingWorkflow.description,
       concept: workflowData.concept || existingWorkflow.concept,
-      clipDuration: workflowData.clipDuration || existingWorkflow.clipDuration,
-      numberOfClips: workflowData.numberOfClips || existingWorkflow.numberOfClips,
+      numberOfClips: workflowData.numberOfClips !== undefined ? workflowData.numberOfClips : existingWorkflow.numberOfClips,
       videoWorkflowFile: workflowData.videoWorkflowFile || existingWorkflow.videoWorkflowFile,
       imageWorkflowFile: workflowData.imageWorkflowFile || existingWorkflow.imageWorkflowFile,
       schedule: workflowData.schedule !== undefined ? workflowData.schedule : (existingWorkflow.schedule || 1),
+      negativePrompt: workflowData.negativePrompt !== undefined ? workflowData.negativePrompt : (existingWorkflow.negativePrompt || ''),
+      width: workflowData.width !== undefined ? workflowData.width : (existingWorkflow.width || ''),
+      height: workflowData.height !== undefined ? workflowData.height : (existingWorkflow.height || ''),
+      fps: workflowData.fps !== undefined ? workflowData.fps : (existingWorkflow.fps || ''),
+      steps: workflowData.steps !== undefined ? workflowData.steps : (existingWorkflow.steps || ''),
+      length: workflowData.length !== undefined ? workflowData.length : (existingWorkflow.length || ''),
+      seed: workflowData.seed !== undefined ? workflowData.seed : (existingWorkflow.seed || ''),
       updatedAt: new Date().toISOString()
     }
 

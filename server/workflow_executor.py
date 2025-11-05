@@ -48,6 +48,17 @@ def execute_workflow(
         schedule_minutes = workflow.get('schedule', 60)
         numberOfClips = workflow.get('numberOfClips', 1)
         
+        # Extract advanced settings
+        advanced_settings = {
+            'negativePrompt': workflow.get('negativePrompt', ''),
+            'width': workflow.get('width', ''),
+            'height': workflow.get('height', ''),
+            'fps': workflow.get('fps', ''),
+            'steps': workflow.get('steps', ''),
+            'length': workflow.get('length', ''),
+            'seed': workflow.get('seed', '')
+        }
+        
         if not concept or not video_workflow:
             raise Exception("Workflow missing required fields: concept or videoWorkflowFile")
         
@@ -76,6 +87,7 @@ def execute_workflow(
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
                 numberOfClips=numberOfClips,
+                advanced_settings=advanced_settings,
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -90,6 +102,7 @@ def execute_workflow(
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
                 numberOfClips=numberOfClips,
+                advanced_settings=advanced_settings,
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -116,6 +129,7 @@ def _execute_text_to_video_workflow(
     output_folder: Optional[str],
     schedule_minutes: int,
     numberOfClips: int = 1,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
@@ -134,6 +148,7 @@ def _execute_text_to_video_workflow(
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
+                advanced_settings=advanced_settings or {},
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -147,6 +162,7 @@ def _execute_text_to_video_workflow(
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
+                advanced_settings=advanced_settings or {},
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -167,11 +183,13 @@ def _execute_single_text_to_video_clip(
     comfyui_path: Optional[str],
     output_folder: Optional[str],
     schedule_minutes: int,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
     """Execute a single text-to-video clip"""
     try:
+        advanced_settings = advanced_settings or {}
         # Create proper FormData for multipart/form-data
         files = {
             'workflow_file': (video_workflow.get('fileName', 'workflow.json'), json.dumps(video_workflow.get('json', {})), 'application/json')
@@ -180,6 +198,22 @@ def _execute_single_text_to_video_clip(
             'prompt': prompt,
             'comfyui_url': comfyui_url
         }
+        
+        # Add advanced settings if provided
+        if advanced_settings.get('negativePrompt'):
+            data['negative_prompt'] = advanced_settings['negativePrompt']
+        if advanced_settings.get('width'):
+            data['width'] = advanced_settings['width']
+        if advanced_settings.get('height'):
+            data['height'] = advanced_settings['height']
+        if advanced_settings.get('fps'):
+            data['fps'] = advanced_settings['fps']
+        if advanced_settings.get('steps'):
+            data['steps'] = advanced_settings['steps']
+        if advanced_settings.get('length'):
+            data['length'] = advanced_settings['length']
+        if advanced_settings.get('seed'):
+            data['seed'] = advanced_settings['seed']
         
         # Use requests to call the generate_video endpoint
         response = requests.post(
@@ -254,12 +288,14 @@ def _execute_multi_clip_text_to_video(
     comfyui_path: Optional[str],
     output_folder: Optional[str],
     schedule_minutes: int,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
     """Execute multiple text-to-video clips sequentially, then concatenate"""
     temp_dir = None
     clip_paths = []
+    advanced_settings = advanced_settings or {}
     
     try:
         # Create temporary directory for intermediate clips
@@ -277,6 +313,22 @@ def _execute_multi_clip_text_to_video(
                 'prompt': prompt,
                 'comfyui_url': comfyui_url
             }
+            
+            # Add advanced settings if provided
+            if advanced_settings.get('negativePrompt'):
+                data['negative_prompt'] = advanced_settings['negativePrompt']
+            if advanced_settings.get('width'):
+                data['width'] = advanced_settings['width']
+            if advanced_settings.get('height'):
+                data['height'] = advanced_settings['height']
+            if advanced_settings.get('fps'):
+                data['fps'] = advanced_settings['fps']
+            if advanced_settings.get('steps'):
+                data['steps'] = advanced_settings['steps']
+            if advanced_settings.get('length'):
+                data['length'] = advanced_settings['length']
+            if advanced_settings.get('seed'):
+                data['seed'] = advanced_settings['seed']
             
             # Queue video generation
             response = requests.post(
@@ -372,6 +424,7 @@ def _execute_image_to_video_workflow(
     output_folder: Optional[str],
     schedule_minutes: int,
     numberOfClips: int = 1,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
@@ -392,6 +445,7 @@ def _execute_image_to_video_workflow(
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
+                advanced_settings=advanced_settings or {},
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -407,6 +461,7 @@ def _execute_image_to_video_workflow(
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
                 schedule_minutes=schedule_minutes,
+                advanced_settings=advanced_settings or {},
                 update_state_callback=update_state_callback,
                 get_state_callback=get_state_callback
             )
@@ -429,11 +484,13 @@ def _execute_single_image_to_video_clip(
     comfyui_path: Optional[str],
     output_folder: Optional[str],
     schedule_minutes: int,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
     """Execute a single image-to-video clip"""
     try:
+        advanced_settings = advanced_settings or {}
         # Step 1: Generate image
         image_files = {
             'workflow_file': (image_workflow.get('fileName', 'image_workflow.json'), json.dumps(image_workflow.get('json', {})), 'application/json')
@@ -510,6 +567,18 @@ def _execute_single_image_to_video_clip(
             'comfyui_path': comfyui_path or ''
         }
         
+        # Add advanced settings for video generation (no width/height for image-to-video)
+        if advanced_settings.get('negativePrompt'):
+            video_form_data['negative_prompt'] = advanced_settings['negativePrompt']
+        if advanced_settings.get('fps'):
+            video_form_data['fps'] = advanced_settings['fps']
+        if advanced_settings.get('steps'):
+            video_form_data['steps'] = advanced_settings['steps']
+        if advanced_settings.get('length'):
+            video_form_data['length'] = advanced_settings['length']
+        if advanced_settings.get('seed'):
+            video_form_data['seed'] = advanced_settings['seed']
+        
         video_response = requests.post(
             f'http://127.0.0.1:8000/generate_image_to_video',
             files=video_files,
@@ -585,12 +654,14 @@ def _execute_multi_clip_image_to_video(
     comfyui_path: Optional[str],
     output_folder: Optional[str],
     schedule_minutes: int,
+    advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
     get_state_callback=None
 ) -> Dict:
     """Execute multiple image-to-video clips sequentially, then concatenate"""
     temp_dir = None
     clip_paths = []
+    advanced_settings = advanced_settings or {}
     
     try:
         # Step 1: Generate one image from the base concept
@@ -676,6 +747,18 @@ def _execute_multi_clip_image_to_video(
                 'comfyui_url': comfyui_url,
                 'comfyui_path': comfyui_path or ''
             }
+            
+            # Add advanced settings for video generation (no width/height for image-to-video)
+            if advanced_settings.get('negativePrompt'):
+                video_form_data['negative_prompt'] = advanced_settings['negativePrompt']
+            if advanced_settings.get('fps'):
+                video_form_data['fps'] = advanced_settings['fps']
+            if advanced_settings.get('steps'):
+                video_form_data['steps'] = advanced_settings['steps']
+            if advanced_settings.get('length'):
+                video_form_data['length'] = advanced_settings['length']
+            if advanced_settings.get('seed'):
+                video_form_data['seed'] = advanced_settings['seed']
             
             video_response = requests.post(
                 f'http://127.0.0.1:8000/generate_image_to_video',

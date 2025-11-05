@@ -1,12 +1,11 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Save, Bot, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Save, Bot, HelpCircle, Settings as SettingsIcon, ChevronDown, ChevronRight } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 import { workflowManager } from '../utils/workflowManager.js'
 
 export default function CreateWorkflow() {
   const [name, setName] = useState('')
   const [concept, setConcept] = useState('')
-  const [clipDuration, setClipDuration] = useState(5)
   const [numberOfClips, setNumberOfClips] = useState(1)
   const [videoWorkflowFile, setVideoWorkflowFile] = useState(null)
   const [imageWorkflowFile, setImageWorkflowFile] = useState(null)
@@ -16,6 +15,15 @@ export default function CreateWorkflow() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingWorkflowId, setEditingWorkflowId] = useState(null)
   const [workflowType, setWorkflowType] = useState(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  // Advanced settings state
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [width, setWidth] = useState('')
+  const [height, setHeight] = useState('')
+  const [fps, setFps] = useState('')
+  const [steps, setSteps] = useState('')
+  const [length, setLength] = useState('')
+  const [seed, setSeed] = useState('')
   const conceptTextareaRef = React.useRef(null)
 
 
@@ -33,10 +41,18 @@ export default function CreateWorkflow() {
         setEditingWorkflowId(editWorkflowId)
         setName(workflow.name || '')
         setConcept(workflow.concept || '')
-        setClipDuration(workflow.clipDuration || 5)
         setNumberOfClips(workflow.numberOfClips || 1)
         setVideoWorkflowFile(workflow.videoWorkflowFile || null)
         setImageWorkflowFile(workflow.imageWorkflowFile || null)
+        
+        // Load advanced settings
+        setNegativePrompt(workflow.negativePrompt || '')
+        setWidth(workflow.width || '')
+        setHeight(workflow.height || '')
+        setFps(workflow.fps || '')
+        setSteps(workflow.steps || '')
+        setLength(workflow.length || '')
+        setSeed(workflow.seed || '')
         
         // Determine workflow type based on whether image workflow file exists
         // If imageWorkflowFile exists, it's an image-to-video workflow
@@ -123,11 +139,17 @@ export default function CreateWorkflow() {
       const workflowData = {
         name: name.trim(),
         concept: concept.trim(),
-        clipDuration,
         numberOfClips,
         videoWorkflowFile,
         imageWorkflowFile,
-        schedule: scheduleInMinutes
+        schedule: scheduleInMinutes,
+        negativePrompt: negativePrompt.trim(),
+        width: width.trim(),
+        height: height.trim(),
+        fps: fps.trim(),
+        steps: steps.trim(),
+        length: length.trim(),
+        seed: seed.trim()
       }
 
       let result
@@ -253,29 +275,6 @@ export default function CreateWorkflow() {
             />
           </div>
 
-          {/* Clip Duration Field */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <label className="block text-sm font-medium text-gray-200">
-                Clip Duration
-              </label>
-              <Tooltip content="Duration of each clip in seconds">
-                <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-300 cursor-help" />
-              </Tooltip>
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="1"
-                max="60"
-                value={clipDuration}
-                onChange={(e) => setClipDuration(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-24 rounded-md bg-gray-950 border border-gray-800 p-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              />
-              <span className="text-sm text-gray-400">seconds</span>
-            </div>
-          </div>
-
           {/* Number of Clips Field */}
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -389,6 +388,138 @@ export default function CreateWorkflow() {
               />
             </div>
           ) : null}
+
+          {/* Advanced Settings Section */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <button
+              onClick={() => setShowAdvanced(v => !v)}
+              className="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
+            >
+              <div className="flex items-center gap-2 text-gray-200 font-medium">
+                <SettingsIcon size={16} /> Advanced Settings
+              </div>
+              <div className="text-gray-400 hover:text-gray-200 transition-colors">
+                {showAdvanced ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+              </div>
+            </button>
+            {showAdvanced && (
+              <div className="mt-4 space-y-5">
+                {/* Negative Prompt */}
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Negative Prompt</label>
+                  <textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="Describe what you want to avoid..."
+                    rows={workflowType === 'image-to-video' ? 2 : 3}
+                    className="w-full resize-y min-h-[60px] rounded-md bg-gray-950 border border-gray-800 p-3 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+
+                {/* Width and Height - Only for Text-to-Video */}
+                {workflowType !== 'image-to-video' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-300 mb-1">Width</label>
+                      <input
+                        type="number"
+                        min={128}
+                        step={64}
+                        placeholder="e.g. 768"
+                        value={width}
+                        onChange={(e) => setWidth(e.target.value)}
+                        className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-300 mb-1">Height</label>
+                      <input
+                        type="number"
+                        min={128}
+                        step={64}
+                        placeholder="e.g. 768"
+                        value={height}
+                        onChange={(e) => setHeight(e.target.value)}
+                        className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* FPS and Steps */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-gray-300 mb-1">FPS</label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 24"
+                      value={fps}
+                      onChange={(e) => setFps(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-300 mb-1">Steps</label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 50"
+                      value={steps}
+                      onChange={(e) => setSteps(e.target.value)}
+                      className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </div>
+                </div>
+
+                {/* Length */}
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Length</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 1, 5, 9, 13..."
+                    value={length}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setLength(val)
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value
+                      if (val === '') {
+                        setLength('')
+                        return
+                      }
+                      const numVal = parseInt(val)
+                      if (!isNaN(numVal) && numVal > 0) {
+                        // Check if value matches pattern: 1 + 4*n where n >= 0
+                        if ((numVal - 1) % 4 !== 0) {
+                          // Round to nearest valid value
+                          const rounded = Math.round((numVal - 1) / 4) * 4 + 1
+                          setLength(Math.max(1, rounded).toString())
+                        }
+                      }
+                    }}
+                    className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Values: 1, 5, 9, 13, 17, 21... (increments of 4)</p>
+                </div>
+
+                {/* Seed */}
+                <div>
+                  <label className="text-sm text-gray-300 mb-1">Seed</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 1234567890"
+                    value={seed}
+                    onChange={(e) => setSeed(e.target.value)}
+                    className="w-full bg-gray-950 border border-gray-800 rounded-md p-2 text-gray-200 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Define the outcome of the video</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Action Buttons */}

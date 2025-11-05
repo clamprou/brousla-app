@@ -279,17 +279,17 @@ export default function ImageToVideo() {
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowAdvanced(v => !v)}
+              className="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
+            >
               <div className="flex items-center gap-2 text-gray-200 font-medium">
                 <SettingsIcon size={16} /> Advanced Settings
               </div>
-              <button
-                onClick={() => setShowAdvanced(v => !v)}
-                className="text-gray-400 hover:text-gray-200 transition-colors"
-              >
+              <div className="text-gray-400 hover:text-gray-200 transition-colors">
                 {showAdvanced ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-              </button>
-            </div>
+              </div>
+            </button>
             {showAdvanced && (
               <div className="mt-4 space-y-5">
                 <div>
