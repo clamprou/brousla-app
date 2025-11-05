@@ -14,16 +14,53 @@ export default function Settings() {
     // Load initial settings
     setSettings(settingsManager.getSettings())
     
-    // Load ComfyUI server URL from localStorage
-    const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
-    if (prefs.comfyUiServer) {
-      setComfyuiServerUrl(prefs.comfyUiServer)
-    }
-
-    // Sync output folder from backend preferences
-    const syncOutputFolderFromBackend = async () => {
+    // Sync settings from backend preferences
+    const syncFromBackend = async () => {
       try {
         const backendPrefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+        
+        // Sync ComfyUI server URL
+        const localPrefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
+        let needsBackendSync = false
+        
+        if (backendPrefs.comfyUiServer) {
+          setComfyuiServerUrl(backendPrefs.comfyUiServer)
+          // Also save to localStorage for backward compatibility
+          localPrefs.comfyUiServer = backendPrefs.comfyUiServer
+          localStorage.setItem('userPreferences', JSON.stringify(localPrefs))
+        } else if (localPrefs.comfyUiServer) {
+          // Backend doesn't have it but localStorage does - sync to backend
+          setComfyuiServerUrl(localPrefs.comfyUiServer)
+          backendPrefs.comfyUiServer = localPrefs.comfyUiServer
+          needsBackendSync = true
+        }
+        
+        // Sync ComfyUI path
+        const currentPath = settingsManager.getComfyUIPath()
+        if (backendPrefs.comfyuiPath) {
+          // Backend has it - sync to frontend if different
+          if (currentPath !== backendPrefs.comfyuiPath) {
+            settingsManager.setComfyUIPath(backendPrefs.comfyuiPath, {
+              isValid: true,
+              message: 'Synced from backend'
+            })
+          }
+        } else if (currentPath) {
+          // Frontend has it but backend doesn't - sync to backend
+          backendPrefs.comfyuiPath = currentPath
+          needsBackendSync = true
+        }
+        
+        // Sync to backend if needed
+        if (needsBackendSync) {
+          await fetch('http://127.0.0.1:8000/preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(backendPrefs)
+          })
+        }
+        
+        // Sync output folder
         if (backendPrefs.aiWorkflowsOutputFolder) {
           const currentFolder = settingsManager.getAIWorkflowsOutputFolder()
           if (currentFolder !== backendPrefs.aiWorkflowsOutputFolder) {
@@ -31,10 +68,10 @@ export default function Settings() {
           }
         }
       } catch (error) {
-        console.error('Error syncing output folder from backend:', error)
+        console.error('Error syncing settings from backend:', error)
       }
     }
-    syncOutputFolderFromBackend()
+    syncFromBackend()
 
     // Listen for settings updates
     const handleSettingsUpdate = (event) => {
@@ -48,12 +85,25 @@ export default function Settings() {
     }
   }, [])
 
-  const handleComfyuiServerUrlChange = (url) => {
+  const handleComfyuiServerUrlChange = async (url) => {
     setComfyuiServerUrl(url)
     // Save to localStorage
     const prefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
     prefs.comfyUiServer = url
     localStorage.setItem('userPreferences', JSON.stringify(prefs))
+    
+    // Sync to backend preferences
+    try {
+      const backendPrefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+      backendPrefs.comfyUiServer = url
+      await fetch('http://127.0.0.1:8000/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backendPrefs)
+      })
+    } catch (error) {
+      console.error('Error syncing ComfyUI server URL to backend:', error)
+    }
   }
 
   const handleSelectComfyUIFolder = async () => {
@@ -72,6 +122,19 @@ export default function Settings() {
           // Only set the path if validation passes
           if (validationResult.isValid) {
             settingsManager.setComfyUIPath(selectedPath, validationResult)
+            
+            // Sync to backend preferences
+            try {
+              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              prefs.comfyuiPath = selectedPath
+              await fetch('http://127.0.0.1:8000/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(prefs)
+              })
+            } catch (error) {
+              console.error('Error syncing ComfyUI path to backend:', error)
+            }
           } else {
             // Show styled error modal for invalid folder
             setErrorModal({
@@ -88,7 +151,7 @@ export default function Settings() {
         input.webkitdirectory = true
         input.directory = true
         
-        input.onchange = (event) => {
+        input.onchange = async (event) => {
           const files = event.target.files
           if (files && files.length > 0) {
             // Get the directory path from the first file
@@ -99,6 +162,19 @@ export default function Settings() {
               isValid: true,
               message: 'Folder selected (validation not available in web version)'
             })
+            
+            // Sync to backend preferences
+            try {
+              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              prefs.comfyuiPath = path
+              await fetch('http://127.0.0.1:8000/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(prefs)
+              })
+            } catch (error) {
+              console.error('Error syncing ComfyUI path to backend:', error)
+            }
           }
         }
         
@@ -317,7 +393,21 @@ export default function Settings() {
             
             {settings.comfyuiPath && (
               <button
-                onClick={() => settingsManager.setComfyUIPath(null, null)}
+                onClick={async () => {
+                  settingsManager.setComfyUIPath(null, null)
+                  // Sync to backend preferences
+                  try {
+                    const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+                    prefs.comfyuiPath = null
+                    await fetch('http://127.0.0.1:8000/preferences', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(prefs)
+                    })
+                  } catch (error) {
+                    console.error('Error syncing ComfyUI path to backend:', error)
+                  }
+                }}
                 className="px-3 py-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg font-medium transition-colors"
               >
                 Clear
