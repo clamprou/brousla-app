@@ -1,6 +1,7 @@
 import React from 'react'
 import { Upload, Settings as SettingsIcon, ChevronDown, ChevronRight, Loader2, Download, RotateCcw, ArrowRight } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
+import ComfyUIErrorModal from '../components/ComfyUIErrorModal.jsx'
 import { settingsManager } from '../utils/settingsManager.js'
 
 export default function ImageToVideo() {
@@ -20,6 +21,7 @@ export default function ImageToVideo() {
   const [length, setLength] = React.useState('')
   const [seed, setSeed] = React.useState('')
   const [videoUrl, setVideoUrl] = React.useState('')
+  const [showComfyUIError, setShowComfyUIError] = React.useState(false)
 
   const fileInputRef = React.useRef(null)
 
@@ -128,12 +130,22 @@ export default function ImageToVideo() {
         pollForStatus(result.prompt_id, comfyuiUrl)
       } else {
         console.error('Generation failed:', result.error)
-        alert(`Generation failed: ${result.message}`)
+        if (result.isComfyUIOffline) {
+          setShowComfyUIError(true)
+        } else {
+          alert(`Generation failed: ${result.message}`)
+        }
         setIsGenerating(false)
       }
     } catch (error) {
       console.error('Error starting generation:', error)
-      alert('Failed to start generation. Please check your ComfyUI server connection.')
+      // Check if error message indicates ComfyUI is offline
+      const errorStr = error.message?.toLowerCase() || String(error).toLowerCase()
+      if (errorStr.includes('connection') || errorStr.includes('refused') || errorStr.includes('failed to establish')) {
+        setShowComfyUIError(true)
+      } else {
+        alert('Failed to start generation. Please check your ComfyUI server connection.')
+      }
       setIsGenerating(false)
     }
   }
@@ -449,6 +461,7 @@ export default function ImageToVideo() {
           </div>
         </div>
       </div>
+      <ComfyUIErrorModal isOpen={showComfyUIError} onClose={() => setShowComfyUIError(false)} />
     </div>
   )
 }

@@ -31,14 +31,17 @@ except Exception:  # pragma: no cover
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 WORKFLOWS_DIR = os.path.join(os.path.dirname(__file__), 'workflows')
 OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), 'outputs')
+STORED_WORKFLOWS_DIR = os.path.join(DATA_DIR, 'stored_workflows')
 
 PREFERENCES_PATH = os.path.join(DATA_DIR, 'preferences.json')
 HISTORY_PATH = os.path.join(DATA_DIR, 'history.json')
 WORKFLOW_STATE_PATH = os.path.join(DATA_DIR, 'workflow_state.json')
+STORED_WORKFLOWS_METADATA_PATH = os.path.join(DATA_DIR, 'stored_workflows_metadata.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(WORKFLOWS_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
+os.makedirs(STORED_WORKFLOWS_DIR, exist_ok=True)
 
 
 # Lifespan event handlers (replaces deprecated on_event)
@@ -135,6 +138,93 @@ def _read_json(path: str, default):
 def _write_json(path: str, data) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
+
+
+# Stored Workflows Management Functions
+def _get_stored_workflows_metadata() -> dict:
+    """Get metadata for all stored workflows"""
+    return _read_json(STORED_WORKFLOWS_METADATA_PATH, {"workflows": []})
+
+
+def _save_stored_workflows_metadata(metadata: dict) -> None:
+    """Save metadata for stored workflows"""
+    _write_json(STORED_WORKFLOWS_METADATA_PATH, metadata)
+
+
+def _get_stored_workflow_file_path(workflow_id: str) -> str:
+    """Get the file path for a stored workflow"""
+    return os.path.join(STORED_WORKFLOWS_DIR, f"{workflow_id}.json")
+
+
+# ComfyUI Connection Error Detection
+def _is_comfyui_connection_error(exception: Exception) -> bool:
+    """Check if an exception indicates ComfyUI server is offline/not reachable"""
+    error_str = str(exception).lower()
+    error_type = type(exception).__name__
+    
+    # Check for connection-related error patterns
+    connection_patterns = [
+        "connection refused",
+        "failed to establish a new connection",
+        "max retries exceeded",
+        "target machine actively refused",
+        "actively refused",
+        "httpconnectionpool",
+        "newconnectionerror",
+        "connectionerror",
+        "connection aborted",
+        "name or service not known",
+        "nodename nor servname provided"
+    ]
+    
+    # Check if error message contains any connection pattern
+    for pattern in connection_patterns:
+        if pattern in error_str:
+            return True
+    
+    # Check exception type
+    if "ConnectionError" in error_type or "ConnectionRefusedError" in error_type:
+        return True
+    
+    # Check for requests library connection errors
+    try:
+        import requests
+        if isinstance(exception, (requests.exceptions.ConnectionError, requests.exceptions.ConnectTimeout)):
+            return True
+    except ImportError:
+        pass
+    
+    return False
+
+
+@app.get('/comfyui/test-connection')
+def test_comfyui_connection(comfyui_url: Optional[str] = Query(default=None)):
+    """Test ComfyUI server connection"""
+    try:
+        # Get ComfyUI URL from parameter or preferences
+        if not comfyui_url:
+            prefs = _read_json(PREFERENCES_PATH, {})
+            comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
+        
+        # Test connection by attempting to get queue status
+        client = ComfyUIClient(comfyui_url or "http://127.0.0.1:8188")
+        queue_result = client.get_queue()
+        
+        return {
+            "success": True,
+            "message": "ComfyUI server is running and accessible",
+            "comfyui_url": comfyui_url,
+            "queue_info": queue_result
+        }
+    except Exception as e:
+        is_offline = _is_comfyui_connection_error(e)
+        return {
+            "success": False,
+            "message": f"Failed to connect to ComfyUI server: {str(e)}",
+            "comfyui_url": comfyui_url or "http://127.0.0.1:8188",
+            "isComfyUIOffline": is_offline,
+            "error": str(e)
+        }
 
 
 @app.get('/preferences')
@@ -239,8 +329,8 @@ def _queue_comfyui_workflow(
     fps: Optional[int] = None,
     length: Optional[int] = None,
     seed: Optional[int] = None
-) -> str:
-    """Queue a ComfyUI workflow and return the prompt_id immediately"""
+) -> dict:
+    """Queue a ComfyUI workflow and return result dict with prompt_id and error info"""
     try:
         client = ComfyUIClient(comfyui_url)
         
@@ -265,19 +355,32 @@ def _queue_comfyui_workflow(
         queue_result = client.queue_prompt(workflow_to_queue)
         prompt_id = queue_result["prompt_id"]
         
-        return prompt_id
+        return {
+            "success": True,
+            "prompt_id": prompt_id,
+            "isComfyUIOffline": False
+        }
             
     except Exception as e:
-        raise Exception(f"Failed to queue ComfyUI workflow: {str(e)}")
+        is_offline = _is_comfyui_connection_error(e)
+        return {
+            "success": False,
+            "error": str(e),
+            "isComfyUIOffline": is_offline
+        }
 
 
-def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None, positive_prompt: Optional[str] = None, negative_prompt: Optional[str] = None, fps: Optional[int] = None, steps: Optional[int] = None, length: Optional[int] = None, seed: Optional[int] = None) -> str:
-    """Queue a ComfyUI image-to-video workflow and return the prompt_id immediately"""
+def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_filename: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None, positive_prompt: Optional[str] = None, negative_prompt: Optional[str] = None, fps: Optional[int] = None, steps: Optional[int] = None, length: Optional[int] = None, seed: Optional[int] = None) -> dict:
+    """Queue a ComfyUI image-to-video workflow and return result dict with prompt_id and error info"""
     try:
         client = ComfyUIClient(comfyui_url)
         
         if not comfyui_path or not os.path.exists(comfyui_path):
-            raise Exception("ComfyUI path not configured. Please set ComfyUI folder path in settings.")
+            return {
+                "success": False,
+                "error": "ComfyUI path not configured. Please set ComfyUI folder path in settings.",
+                "isComfyUIOffline": False
+            }
         
         # Upload image to ComfyUI input directory
         input_dir = os.path.join(comfyui_path, 'ComfyUI', 'input')
@@ -314,10 +417,19 @@ def _queue_comfyui_image_to_video(workflow_json: dict, image_data: bytes, image_
         queue_result = client.queue_prompt(workflow_to_queue)
         prompt_id = queue_result["prompt_id"]
         
-        return prompt_id
+        return {
+            "success": True,
+            "prompt_id": prompt_id,
+            "isComfyUIOffline": False
+        }
             
     except Exception as e:
-        raise Exception(f"Failed to queue ComfyUI image-to-video workflow: {str(e)}")
+        is_offline = _is_comfyui_connection_error(e)
+        return {
+            "success": False,
+            "error": str(e),
+            "isComfyUIOffline": is_offline
+        }
 
 
 def _get_comfyui_result(prompt_id: str, comfyui_url: str = "http://127.0.0.1:8188", comfyui_path: Optional[str] = None) -> dict:
@@ -462,8 +574,8 @@ async def generate_image(
         
         print(f"Parsed parameters: width={width_int}, height={height_int}, steps={steps_int}, cfg_scale={cfg_scale_float}, seed={seed_int}")
         
-        # Queue workflow and get prompt_id immediately
-        prompt_id = _queue_comfyui_workflow(
+        # Queue workflow and get result
+        queue_result = _queue_comfyui_workflow(
             workflow_json, 
             prompt, 
             comfyui_url, 
@@ -477,17 +589,27 @@ async def generate_image(
             seed_int
         )
         
-        return {
-            'success': True,
-            'prompt_id': prompt_id,
-            'message': 'Image generation started'
-        }
+        if queue_result.get('success'):
+            return {
+                'success': True,
+                'prompt_id': queue_result['prompt_id'],
+                'message': 'Image generation started'
+            }
+        else:
+            return {
+                'success': False,
+                'error': queue_result.get('error', 'Unknown error'),
+                'message': 'Failed to start image generation',
+                'isComfyUIOffline': queue_result.get('isComfyUIOffline', False)
+            }
         
     except Exception as e:
+        is_offline = _is_comfyui_connection_error(e)
         return {
             'success': False,
             'error': str(e),
-            'message': 'Failed to start image generation'
+            'message': 'Failed to start image generation',
+            'isComfyUIOffline': is_offline
         }
 
 
@@ -556,8 +678,8 @@ async def generate_video(
         
         print(f"Parsed video parameters: width={width_int}, height={height_int}, fps={fps_int}, steps={steps_int}, length={length_int}, seed={seed_int}")
         
-        # Queue workflow and get prompt_id immediately
-        prompt_id = _queue_comfyui_workflow(
+        # Queue workflow and get result
+        queue_result = _queue_comfyui_workflow(
             workflow_json, 
             prompt, 
             comfyui_url, 
@@ -571,17 +693,27 @@ async def generate_video(
             seed_int
         )
         
-        return {
-            'success': True,
-            'prompt_id': prompt_id,
-            'message': 'Video generation started'
-        }
+        if queue_result.get('success'):
+            return {
+                'success': True,
+                'prompt_id': queue_result['prompt_id'],
+                'message': 'Video generation started'
+            }
+        else:
+            return {
+                'success': False,
+                'error': queue_result.get('error', 'Unknown error'),
+                'message': 'Failed to start video generation',
+                'isComfyUIOffline': queue_result.get('isComfyUIOffline', False)
+            }
         
     except Exception as e:
+        is_offline = _is_comfyui_connection_error(e)
         return {
             'success': False,
             'error': str(e),
-            'message': 'Failed to start video generation'
+            'message': 'Failed to start video generation',
+            'isComfyUIOffline': is_offline
         }
 
 
@@ -642,8 +774,8 @@ async def generate_image_to_video(
         # Ensure filename is not None (provide default if missing)
         image_filename = image_file.filename or "image.png"
         
-        # Queue workflow and get prompt_id immediately
-        prompt_id = _queue_comfyui_image_to_video(
+        # Queue workflow and get result
+        queue_result = _queue_comfyui_image_to_video(
             workflow_json, 
             image_content, 
             image_filename, 
@@ -657,17 +789,27 @@ async def generate_image_to_video(
             seed_int
         )
         
-        return {
-            'success': True,
-            'prompt_id': prompt_id,
-            'message': 'Image-to-video generation started'
-        }
+        if queue_result.get('success'):
+            return {
+                'success': True,
+                'prompt_id': queue_result['prompt_id'],
+                'message': 'Image-to-video generation started'
+            }
+        else:
+            return {
+                'success': False,
+                'error': queue_result.get('error', 'Unknown error'),
+                'message': 'Failed to start image-to-video generation',
+                'isComfyUIOffline': queue_result.get('isComfyUIOffline', False)
+            }
         
     except Exception as e:
+        is_offline = _is_comfyui_connection_error(e)
         return {
             'success': False,
             'error': str(e),
-            'message': 'Failed to start image-to-video generation'
+            'message': 'Failed to start image-to-video generation',
+            'isComfyUIOffline': is_offline
         }
 
 
@@ -796,6 +938,217 @@ def get_comfyui_file(
         import traceback
         print(traceback.format_exc())
         return {"error": str(e)}
+
+
+# Stored Workflows API Endpoints
+@app.get('/stored-workflows')
+def get_stored_workflows():
+    """List all stored workflows with metadata"""
+    try:
+        metadata = _get_stored_workflows_metadata()
+        return {
+            "success": True,
+            "workflows": metadata.get("workflows", [])
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/stored-workflows')
+async def save_stored_workflow(
+    workflow_file: UploadFile = File(...),
+    name: str = Form(default=""),
+    description: str = Form(default="")
+):
+    """Save a new workflow"""
+    try:
+        # Read workflow file
+        workflow_content = await workflow_file.read()
+        workflow_json = json.loads(workflow_content.decode('utf-8'))
+        
+        # Generate unique ID
+        workflow_id = uuid.uuid4().hex
+        
+        # Use provided name or fall back to filename
+        workflow_name = name.strip() if name.strip() else workflow_file.filename or f"Workflow {workflow_id[:8]}"
+        
+        # Save workflow file
+        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        with open(workflow_path, 'w', encoding='utf-8') as f:
+            json.dump(workflow_json, f, indent=2)
+        
+        # Create metadata entry
+        now = datetime.utcnow().isoformat() + 'Z'
+        workflow_metadata = {
+            "id": workflow_id,
+            "name": workflow_name,
+            "description": description.strip(),
+            "filename": workflow_file.filename or "workflow.json",
+            "uploadDate": now,
+            "lastUsed": None,
+            "fileSize": len(workflow_content)
+        }
+        
+        # Add to metadata
+        metadata = _get_stored_workflows_metadata()
+        metadata["workflows"].append(workflow_metadata)
+        _save_stored_workflows_metadata(metadata)
+        
+        return {
+            "success": True,
+            "workflow": workflow_metadata
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/stored-workflows/{workflow_id}')
+def get_stored_workflow(workflow_id: str):
+    """Retrieve a specific workflow JSON file"""
+    try:
+        metadata = _get_stored_workflows_metadata()
+        workflow_meta = next((w for w in metadata.get("workflows", []) if w["id"] == workflow_id), None)
+        
+        if not workflow_meta:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        # Read workflow file
+        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        if not os.path.exists(workflow_path):
+            return {
+                "success": False,
+                "error": "Workflow file not found"
+            }
+        
+        with open(workflow_path, 'r', encoding='utf-8') as f:
+            workflow_json = json.load(f)
+        
+        return {
+            "success": True,
+            "workflow": workflow_json,
+            "metadata": workflow_meta
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.put('/stored-workflows/{workflow_id}')
+def update_stored_workflow(
+    workflow_id: str,
+    updates: dict = Body(...)
+):
+    """Update workflow metadata (name, description)"""
+    try:
+        metadata = _get_stored_workflows_metadata()
+        workflows = metadata.get("workflows", [])
+        
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        
+        if workflow_index is None:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        # Update metadata
+        if "name" in updates and updates["name"] is not None:
+            workflows[workflow_index]["name"] = str(updates["name"]).strip()
+        if "description" in updates and updates["description"] is not None:
+            workflows[workflow_index]["description"] = str(updates["description"]).strip()
+        
+        metadata["workflows"] = workflows
+        _save_stored_workflows_metadata(metadata)
+        
+        return {
+            "success": True,
+            "workflow": workflows[workflow_index]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.delete('/stored-workflows/{workflow_id}')
+def delete_stored_workflow(workflow_id: str):
+    """Delete a stored workflow"""
+    try:
+        metadata = _get_stored_workflows_metadata()
+        workflows = metadata.get("workflows", [])
+        
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        
+        if workflow_index is None:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        # Remove from metadata
+        workflows.pop(workflow_index)
+        metadata["workflows"] = workflows
+        _save_stored_workflows_metadata(metadata)
+        
+        # Delete workflow file
+        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        if os.path.exists(workflow_path):
+            os.remove(workflow_path)
+        
+        return {
+            "success": True,
+            "message": "Workflow deleted"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/stored-workflows/{workflow_id}/use')
+def mark_workflow_used(workflow_id: str):
+    """Mark workflow as used (update lastUsed timestamp)"""
+    try:
+        metadata = _get_stored_workflows_metadata()
+        workflows = metadata.get("workflows", [])
+        
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        
+        if workflow_index is None:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        # Update lastUsed timestamp
+        now = datetime.utcnow().isoformat() + 'Z'
+        workflows[workflow_index]["lastUsed"] = now
+        
+        metadata["workflows"] = workflows
+        _save_stored_workflows_metadata(metadata)
+        
+        return {
+            "success": True,
+            "workflow": workflows[workflow_index]
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 

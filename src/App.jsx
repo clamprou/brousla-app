@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import TopBar from './components/TopBar.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import TextToImage from './pages/TextToImage.jsx'
@@ -9,11 +9,16 @@ import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-rea
 import AIWorkflows from './pages/AIWorkflows.jsx'
 import CreateWorkflow from './pages/CreateWorkflow.jsx'
 import WorkflowTypeSelection from './pages/WorkflowTypeSelection.jsx'
+import ComfyUIConnectionModal from './components/ComfyUIConnectionModal.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [activeKey, setActiveKey] = useState('text-to-image')
   const previousKeyRef = React.useRef('text-to-image')
+  const [isComfyUIConnected, setIsComfyUIConnected] = useState(false)
+  const [showConnectionModal, setShowConnectionModal] = useState(false)
+  const [isCheckingConnection, setIsCheckingConnection] = useState(true)
+  const previousActiveKeyRef = React.useRef('text-to-image')
 
   // Global navigation event to allow pages to trigger navigation without props drilling
   React.useEffect(() => {
@@ -35,6 +40,68 @@ export default function App() {
   React.useEffect(() => {
     window.getPreviousPage = () => previousKeyRef.current
   }, [])
+
+  // Check ComfyUI connection on app mount
+  useEffect(() => {
+    const checkComfyUIConnection = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/comfyui/test-connection')
+        const data = await response.json()
+
+        if (data.success) {
+          setIsComfyUIConnected(true)
+          setShowConnectionModal(false)
+        } else {
+          setIsComfyUIConnected(false)
+          setShowConnectionModal(true)
+        }
+      } catch (error) {
+        console.error('Error checking ComfyUI connection:', error)
+        setIsComfyUIConnected(false)
+        setShowConnectionModal(true)
+      } finally {
+        setIsCheckingConnection(false)
+      }
+    }
+
+    checkComfyUIConnection()
+  }, [])
+
+  // Handle successful connection
+  const handleConnectionSuccess = () => {
+    setIsComfyUIConnected(true)
+    setShowConnectionModal(false)
+  }
+
+  // Handle opening settings from modal
+  const handleOpenSettings = () => {
+    setActiveKey('settings')
+  }
+
+  // Track previous activeKey and re-check connection when leaving Settings
+  useEffect(() => {
+    const previousKey = previousActiveKeyRef.current
+    previousActiveKeyRef.current = activeKey
+    
+    // If we just left Settings and connection isn't established, re-check
+    if (previousKey === 'settings' && activeKey !== 'settings' && !isComfyUIConnected) {
+      const checkConnection = async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:8000/comfyui/test-connection')
+          const data = await response.json()
+          if (!data.success) {
+            setShowConnectionModal(true)
+          } else {
+            setIsComfyUIConnected(true)
+            setShowConnectionModal(false)
+          }
+        } catch (error) {
+          setShowConnectionModal(true)
+        }
+      }
+      checkConnection()
+    }
+  }, [activeKey, isComfyUIConnected])
 
   const items = useMemo(() => ([
     // AI Workflows
@@ -68,24 +135,41 @@ export default function App() {
     }
   }, [activeKey])
 
+  // Show modal only when connection is not established and not on Settings page
+  const shouldShowModal = showConnectionModal && activeKey !== 'settings'
+
   return (
     <div className="app-shell flex flex-col bg-gray-950">
-      <TopBar />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          items={items}
-          activeKey={activeKey}
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed(v => !v)}
-          onSelect={(key) => {
-            if (key !== activeKey) {
-              previousKeyRef.current = activeKey
-            }
-            setActiveKey(key)
-          }}
-        />
-        <div className="flex-1 overflow-auto">
-          {page}
+      {/* ComfyUI Connection Modal - Highest Priority */}
+      <ComfyUIConnectionModal
+        isOpen={shouldShowModal}
+        onConnectionSuccess={handleConnectionSuccess}
+        onOpenSettings={handleOpenSettings}
+      />
+
+      {/* Block app interaction when modal is shown */}
+      <div className={shouldShowModal ? 'pointer-events-none opacity-50' : ''}>
+        <TopBar />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar
+            items={items}
+            activeKey={activeKey}
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed(v => !v)}
+            onSelect={(key) => {
+              // Block navigation when modal should be shown, except to Settings
+              if (shouldShowModal && key !== 'settings') {
+                return
+              }
+              if (key !== activeKey) {
+                previousKeyRef.current = activeKey
+              }
+              setActiveKey(key)
+            }}
+          />
+          <div className="flex-1 overflow-auto">
+            {page}
+          </div>
         </div>
       </div>
     </div>

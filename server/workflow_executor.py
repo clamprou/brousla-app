@@ -15,6 +15,42 @@ from datetime import datetime, timedelta
 from ai_agent import generate_prompts
 
 
+def _is_comfyui_connection_error(exception: Exception) -> bool:
+    """Check if an exception indicates ComfyUI server is offline/not reachable"""
+    error_str = str(exception).lower()
+    error_type = type(exception).__name__
+    
+    # Check for connection-related error patterns
+    connection_patterns = [
+        "connection refused",
+        "failed to establish a new connection",
+        "max retries exceeded",
+        "target machine actively refused",
+        "actively refused",
+        "httpconnectionpool",
+        "newconnectionerror",
+        "connectionerror",
+        "connection aborted",
+        "name or service not known",
+        "nodename nor servname provided"
+    ]
+    
+    # Check if error message contains any connection pattern
+    for pattern in connection_patterns:
+        if pattern in error_str:
+            return True
+    
+    # Check exception type
+    if "ConnectionError" in error_type or "ConnectionRefusedError" in error_type:
+        return True
+    
+    # Check for requests library connection errors
+    if isinstance(exception, (requests.exceptions.ConnectionError, requests.exceptions.ConnectTimeout)):
+        return True
+    
+    return False
+
+
 def execute_workflow(
     workflow: Dict,
     workflow_id: str,
@@ -113,10 +149,12 @@ def execute_workflow(
             update_state_callback(workflow_id, {
                 "isRunning": False
             })
+        is_offline = _is_comfyui_connection_error(e)
         return {
             "success": False,
             "error": str(e),
-            "workflow_id": workflow_id
+            "workflow_id": workflow_id,
+            "isComfyUIOffline": is_offline
         }
 
 
@@ -216,19 +254,38 @@ def _execute_single_text_to_video_clip(
             data['seed'] = advanced_settings['seed']
         
         # Use requests to call the generate_video endpoint
-        response = requests.post(
-            f'http://127.0.0.1:8000/generate_video',
-            files=files,
-            data=data,
-            timeout=30
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Failed to start video generation: {response.status_code}")
-        
-        result = response.json()
-        if not result.get('success'):
-            raise Exception(f"Video generation failed: {result.get('error', 'Unknown error')}")
+        try:
+            response = requests.post(
+                f'http://127.0.0.1:8000/generate_video',
+                files=files,
+                data=data,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to start video generation: {response.status_code}")
+            
+            result = response.json()
+            if not result.get('success'):
+                # Check if it's a ComfyUI connection error
+                if result.get('isComfyUIOffline'):
+                    return {
+                        "success": False,
+                        "error": result.get('error', 'ComfyUI server is not running'),
+                        "workflow_id": workflow_id,
+                        "isComfyUIOffline": True
+                    }
+                raise Exception(f"Video generation failed: {result.get('error', 'Unknown error')}")
+        except requests.exceptions.RequestException as e:
+            is_offline = _is_comfyui_connection_error(e)
+            if is_offline:
+                return {
+                    "success": False,
+                    "error": f"ComfyUI server is not running: {str(e)}",
+                    "workflow_id": workflow_id,
+                    "isComfyUIOffline": True
+                }
+            raise
         
         prompt_id = result.get('prompt_id')
         
@@ -331,19 +388,38 @@ def _execute_multi_clip_text_to_video(
                 data['seed'] = advanced_settings['seed']
             
             # Queue video generation
-            response = requests.post(
-                f'http://127.0.0.1:8000/generate_video',
-                files=files,
-                data=data,
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"Failed to start video generation for clip {clip_index}: {response.status_code}")
-            
-            result = response.json()
-            if not result.get('success'):
-                raise Exception(f"Video generation failed for clip {clip_index}: {result.get('error', 'Unknown error')}")
+            try:
+                response = requests.post(
+                    f'http://127.0.0.1:8000/generate_video',
+                    files=files,
+                    data=data,
+                    timeout=30
+                )
+                
+                if response.status_code != 200:
+                    raise Exception(f"Failed to start video generation for clip {clip_index}: {response.status_code}")
+                
+                result = response.json()
+                if not result.get('success'):
+                    # Check if it's a ComfyUI connection error
+                    if result.get('isComfyUIOffline'):
+                        return {
+                            "success": False,
+                            "error": result.get('error', 'ComfyUI server is not running'),
+                            "workflow_id": workflow_id,
+                            "isComfyUIOffline": True
+                        }
+                    raise Exception(f"Video generation failed for clip {clip_index}: {result.get('error', 'Unknown error')}")
+            except requests.exceptions.RequestException as e:
+                is_offline = _is_comfyui_connection_error(e)
+                if is_offline:
+                    return {
+                        "success": False,
+                        "error": f"ComfyUI server is not running: {str(e)}",
+                        "workflow_id": workflow_id,
+                        "isComfyUIOffline": True
+                    }
+                raise
             
             prompt_id = result.get('prompt_id')
             
@@ -579,19 +655,38 @@ def _execute_single_image_to_video_clip(
         if advanced_settings.get('seed'):
             video_form_data['seed'] = advanced_settings['seed']
         
-        video_response = requests.post(
-            f'http://127.0.0.1:8000/generate_image_to_video',
-            files=video_files,
-            data=video_form_data,
-            timeout=30
-        )
-        
-        if video_response.status_code != 200:
-            raise Exception(f"Failed to start video generation: {video_response.status_code}")
-        
-        video_result = video_response.json()
-        if not video_result.get('success'):
-            raise Exception(f"Video generation failed: {video_result.get('error', 'Unknown error')}")
+        try:
+            video_response = requests.post(
+                f'http://127.0.0.1:8000/generate_image_to_video',
+                files=video_files,
+                data=video_form_data,
+                timeout=30
+            )
+            
+            if video_response.status_code != 200:
+                raise Exception(f"Failed to start video generation: {video_response.status_code}")
+            
+            video_result = video_response.json()
+            if not video_result.get('success'):
+                # Check if it's a ComfyUI connection error
+                if video_result.get('isComfyUIOffline'):
+                    return {
+                        "success": False,
+                        "error": video_result.get('error', 'ComfyUI server is not running'),
+                        "workflow_id": workflow_id,
+                        "isComfyUIOffline": True
+                    }
+                raise Exception(f"Video generation failed: {video_result.get('error', 'Unknown error')}")
+        except requests.exceptions.RequestException as e:
+            is_offline = _is_comfyui_connection_error(e)
+            if is_offline:
+                return {
+                    "success": False,
+                    "error": f"ComfyUI server is not running: {str(e)}",
+                    "workflow_id": workflow_id,
+                    "isComfyUIOffline": True
+                }
+            raise
         
         video_prompt_id = video_result.get('prompt_id')
         

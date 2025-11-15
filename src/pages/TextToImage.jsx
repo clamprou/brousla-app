@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { Settings as SettingsIcon, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
+import ComfyUIErrorModal from '../components/ComfyUIErrorModal.jsx'
 import { settingsManager } from '../utils/settingsManager.js'
 
 export default function TextToImage() {
@@ -18,6 +19,7 @@ export default function TextToImage() {
   const [numSteps, setNumSteps] = useState('')
   const [cfgScale, setCfgScale] = useState('')
   const [seed, setSeed] = useState('')
+  const [showComfyUIError, setShowComfyUIError] = useState(false)
 
     const startGeneration = useCallback(async () => {
     if (!prompt.trim() || !workflowFile) return
@@ -90,12 +92,22 @@ export default function TextToImage() {
         pollForStatus(result.prompt_id, comfyuiUrl)
       } else {
         console.error('Generation failed:', result.error)
-        alert(`Generation failed: ${result.message}`)
+        if (result.isComfyUIOffline) {
+          setShowComfyUIError(true)
+        } else {
+          alert(`Generation failed: ${result.message}`)
+        }
         setIsGenerating(false)
       }
     } catch (error) {
       console.error('Error starting generation:', error)
-      alert('Failed to start generation. Please check your ComfyUI server connection.')
+      // Check if error message indicates ComfyUI is offline
+      const errorStr = error.message?.toLowerCase() || String(error).toLowerCase()
+      if (errorStr.includes('connection') || errorStr.includes('refused') || errorStr.includes('failed to establish')) {
+        setShowComfyUIError(true)
+      } else {
+        alert('Failed to start generation. Please check your ComfyUI server connection.')
+      }
       setIsGenerating(false)
     }
   }, [prompt, negativePrompt, workflowFile, imageWidth, imageHeight, numSteps, cfgScale])
@@ -359,6 +371,7 @@ export default function TextToImage() {
           </div>
         </div>
       </div>
+      <ComfyUIErrorModal isOpen={showComfyUIError} onClose={() => setShowComfyUIError(false)} />
     </div>
   )
 }
