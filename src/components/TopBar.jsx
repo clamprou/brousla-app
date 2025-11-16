@@ -1,10 +1,18 @@
 import React from 'react'
-import { Settings, HelpCircle, Minus, X } from 'lucide-react'
+import { Settings, HelpCircle, Minus, X, User } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function TopBar() {
+  const { isAuthenticated } = useAuth()
+
   const handleSettingsClick = () => {
     // Dispatch custom event to navigate to settings
     window.dispatchEvent(new CustomEvent('navigate', { detail: 'settings' }))
+  }
+
+  const handleProfileClick = () => {
+    // Dispatch custom event to navigate to profile
+    window.dispatchEvent(new CustomEvent('navigate', { detail: 'profile' }))
   }
 
   const handleHelpClick = () => {
@@ -39,6 +47,18 @@ export default function TopBar() {
 
       {/* Right side - Controls */}
       <div className="flex items-center space-x-2">
+        {/* Profile Button - Only show when authenticated */}
+        {isAuthenticated && (
+          <button
+            onClick={handleProfileClick}
+            className="p-2 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-colors duration-200"
+            style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
+            title="Profile"
+          >
+            <User size={16} />
+          </button>
+        )}
+
         {/* Settings Button */}
         <button
           onClick={handleSettingsClick}

@@ -28,8 +28,8 @@ function createWindow() {
   const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
   if (getIsDev()) {
     mainWindow.loadURL(`http://localhost:${devServerPort}`)
-    // Only open DevTools if not debugging (VS Code will attach if needed)
-    // Don't auto-open DevTools when remote debugging is enabled (port 9223)
+    // Always open DevTools in development for debugging
+    // Only skip if VS Code debugger is attaching
     if (!process.env.VSCODE_INSPECTOR_OPTIONS && !process.env.VSCODE_CWD) {
       // Small delay to check if debugger is attaching
       setTimeout(() => {
@@ -39,6 +39,19 @@ function createWindow() {
         }
       }, 1000)
     }
+    
+    // Add keyboard shortcut to toggle DevTools (F12 or Ctrl+Shift+I / Cmd+Option+I)
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || 
+          (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+          (input.meta && input.alt && input.key.toLowerCase() === 'i')) {
+        if (mainWindow.webContents.isDevToolsOpened()) {
+          mainWindow.webContents.closeDevTools()
+        } else {
+          mainWindow.webContents.openDevTools({ mode: 'detach' })
+        }
+      }
+    })
   } else {
     const distIndexPath = path.join(appBasePath, 'dist', 'index.html')
     if (!existsSync(distIndexPath)) {

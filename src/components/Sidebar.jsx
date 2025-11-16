@@ -1,10 +1,10 @@
 import React from 'react'
 import SidebarItem from './SidebarItem.jsx'
-import { ImageIcon, Film, Type, Settings, PanelLeftClose, PanelLeftOpen, Bot } from 'lucide-react'
+import { ImageIcon, Film, Type, Settings, PanelLeftClose, PanelLeftOpen, Bot, User } from 'lucide-react'
 
 export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse, onSelect }) {
   return (
-    <div className={`h-full ${collapsed ? 'w-16' : 'w-56'} bg-gray-900 border-r border-gray-800 p-3 flex flex-col gap-3 transition-all`}>
+    <div className={`flex-shrink-0 h-full ${collapsed ? 'w-16' : 'w-56'} bg-gray-900 border-r border-gray-800 p-3 flex flex-col gap-3 transition-all`}>
       <div className="flex items-center justify-between">
         {!collapsed && <div className="text-sm font-semibold text-gray-200">Brousla</div>}
         <button
@@ -64,6 +64,19 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
                 onClick={() => onSelect(item.key)}
               />
             ))}
+          </div>
+        </div>
+
+        {/* Profile */}
+        <div className="pt-2 border-t border-gray-800">
+          <div className="space-y-1">
+            <SidebarItem
+              icon={User}
+              label="Profile"
+              active={activeKey === 'profile'}
+              collapsed={collapsed}
+              onClick={() => onSelect('profile')}
+            />
           </div>
         </div>
       </div>

@@ -5,11 +5,14 @@ import TextToImage from './pages/TextToImage.jsx'
 import ImageToVideo from './pages/ImageToVideo.jsx'
 import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
+import Profile from './pages/Profile.jsx'
 import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
 import AIWorkflows from './pages/AIWorkflows.jsx'
 import CreateWorkflow from './pages/CreateWorkflow.jsx'
 import WorkflowTypeSelection from './pages/WorkflowTypeSelection.jsx'
 import ComfyUIConnectionModal from './components/ComfyUIConnectionModal.jsx'
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+import { AuthProvider } from './contexts/AuthContext.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -130,6 +133,8 @@ export default function App() {
         return <CreateWorkflow />
       case 'settings':
         return <Settings />
+      case 'profile':
+        return <Profile />
       default:
         return null
     }
@@ -139,40 +144,44 @@ export default function App() {
   const shouldShowModal = showConnectionModal && activeKey !== 'settings'
 
   return (
-    <div className="app-shell flex flex-col bg-gray-950">
-      {/* ComfyUI Connection Modal - Highest Priority */}
-      <ComfyUIConnectionModal
-        isOpen={shouldShowModal}
-        onConnectionSuccess={handleConnectionSuccess}
-        onOpenSettings={handleOpenSettings}
-      />
-
-      {/* Block app interaction when modal is shown */}
-      <div className={shouldShowModal ? 'pointer-events-none opacity-50' : ''}>
-        <TopBar />
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar
-            items={items}
-            activeKey={activeKey}
-            collapsed={collapsed}
-            onToggleCollapse={() => setCollapsed(v => !v)}
-            onSelect={(key) => {
-              // Block navigation when modal should be shown, except to Settings
-              if (shouldShowModal && key !== 'settings') {
-                return
-              }
-              if (key !== activeKey) {
-                previousKeyRef.current = activeKey
-              }
-              setActiveKey(key)
-            }}
+    <AuthProvider>
+      <ProtectedRoute>
+        <div className="app-shell flex flex-col bg-gray-950">
+          {/* ComfyUI Connection Modal - Highest Priority */}
+          <ComfyUIConnectionModal
+            isOpen={shouldShowModal}
+            onConnectionSuccess={handleConnectionSuccess}
+            onOpenSettings={handleOpenSettings}
           />
-          <div className="flex-1 overflow-auto">
-            {page}
+
+          {/* Block app interaction when modal is shown */}
+          <div className={`flex flex-col h-screen ${shouldShowModal ? 'pointer-events-none opacity-50' : ''}`}>
+            <TopBar />
+            <div className="flex flex-1 overflow-hidden min-h-0">
+              <Sidebar
+                items={items}
+                activeKey={activeKey}
+                collapsed={collapsed}
+                onToggleCollapse={() => setCollapsed(v => !v)}
+                onSelect={(key) => {
+                  // Block navigation when modal should be shown, except to Settings
+                  if (shouldShowModal && key !== 'settings') {
+                    return
+                  }
+                  if (key !== activeKey) {
+                    previousKeyRef.current = activeKey
+                  }
+                  setActiveKey(key)
+                }}
+              />
+              <div className="flex-1 overflow-auto min-h-0">
+                {page}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </ProtectedRoute>
+    </AuthProvider>
   )
 }
 
