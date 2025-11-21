@@ -1,9 +1,7 @@
 """Authentication utilities: JWT, password hashing, and auth dependencies."""
 import base64
 import hashlib
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
@@ -11,39 +9,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+from app.database import get_user_by_id
 
 # JWT token bearer scheme
 security = HTTPBearer()
-
-# Get the directory where this file is located
-_AUTH_DIR = Path(__file__).parent
-_USERS_DB_FILE = _AUTH_DIR.parent / "users_db.json"
-
-
-def load_users_db() -> dict:
-    """Load users database from JSON file."""
-    if _USERS_DB_FILE.exists():
-        try:
-            with open(_USERS_DB_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Failed to load users database: {e}. Starting with empty database.")
-            return {}
-    return {}
-
-
-def save_users_db(users: dict) -> None:
-    """Save users database to JSON file."""
-    try:
-        with open(_USERS_DB_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users, f, indent=2, ensure_ascii=False)
-    except IOError as e:
-        print(f"Error: Failed to save users database: {e}")
-
-
-# Persistent user store (loaded from JSON file on startup)
-# Format: {email: {"id": str, "email": str, "hashed_password": str}}
-users_db: dict = load_users_db()
 
 
 def hash_password(password: str) -> str:
@@ -166,13 +135,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Look up user (in production, query database)
-    # Note: users_db is in-memory, so users are lost on server restart
-    user = None
-    for email, user_data in users_db.items():
-        if user_data["id"] == user_id:
-            user = user_data
-            break
+    # Look up user in database
+    user = get_user_by_id(user_id)
     
     if user is None:
         raise HTTPException(

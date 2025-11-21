@@ -6,10 +6,9 @@ from app.auth import (
     hash_password,
     verify_password,
     create_access_token,
-    get_current_user,
-    users_db,
-    save_users_db
+    get_current_user
 )
+from app.database import get_user_by_email, create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -22,7 +21,8 @@ async def register(user_data: UserRegister):
     Returns a JWT access token (user is automatically logged in).
     """
     # Check if user already exists
-    if user_data.email in users_db:
+    existing_user = get_user_by_email(user_data.email)
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
@@ -34,18 +34,11 @@ async def register(user_data: UserRegister):
     # Hash password
     hashed_password = hash_password(user_data.password)
     
-    # Create user record
-    user_record = {
-        "id": user_id,
-        "email": user_data.email,
-        "hashed_password": hashed_password
-    }
-    
-    users_db[user_data.email] = user_record
-    save_users_db(users_db)  # Persist to disk
+    # Create user in database
+    create_user(user_id, user_data.email, hashed_password)
     
     # Create access token (auto-login after registration)
-    access_token = create_access_token(data={"sub": user_record["id"]})
+    access_token = create_access_token(data={"sub": user_id})
     
     return Token(access_token=access_token)
 
@@ -58,7 +51,7 @@ async def login(credentials: UserLogin):
     Returns a JWT access token.
     """
     # Find user
-    user_record = users_db.get(credentials.email)
+    user_record = get_user_by_email(credentials.email)
     
     if not user_record:
         raise HTTPException(

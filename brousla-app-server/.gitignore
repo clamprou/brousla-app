@@ -31,6 +31,7 @@ ENV/
 .env.local
 
 # User database (contains sensitive password hashes)
+users_db.sqlite
 users_db.json
 
 # IDE

@@ -49,3 +49,14 @@ class ChatResponse(BaseModel):
     model: str
     usage: Optional[dict] = None
 
+
+# Prompt Generation Models
+class PromptGenerationRequest(BaseModel):
+    """Prompt generation request model."""
+    concept: str
+    number_of_clips: int
+
+
+class PromptGenerationResponse(BaseModel):
+    """Prompt generation response model."""
+    prompts: List[str]
