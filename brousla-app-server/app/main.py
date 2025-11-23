@@ -1,8 +1,19 @@
 """FastAPI application entry point."""
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes_auth import router as auth_router
 from app.routes_ai import router as ai_router
+
+# Configure logging level to DEBUG for our modules
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Set specific loggers to DEBUG
+logging.getLogger("app.routes_ai").setLevel(logging.DEBUG)
+logging.getLogger("app.llm.openai_client").setLevel(logging.DEBUG)
+logging.getLogger("app.llm").setLevel(logging.DEBUG)
 
 app = FastAPI(
     title="Brousla App Server",

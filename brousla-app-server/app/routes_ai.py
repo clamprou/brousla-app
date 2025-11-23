@@ -1,12 +1,17 @@
 """AI chat routes."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from app.models import ChatRequest, PromptGenerationRequest, PromptGenerationResponse
+from app.models import ChatRequest, PromptGenerationRequest, PromptGenerationResponse, ChatMessage
 from app.auth import get_current_user
 from app.rate_limit import get_rate_limiter
 from app.llm.factory import get_llm_client
+from app.config import settings
 import json
 import re
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ai"])
 
@@ -106,7 +111,21 @@ Requirements:
 3. Create a cohesive narrative flow across the prompts (they should work together as a sequence)
 4. Each prompt should be detailed and descriptive for video generation
 5. Return ONLY a JSON array of strings, with no additional text or explanation
-6. Format: ["prompt 1", "prompt 2", "prompt 3", ...]
+6. Format: ["prompt 1", "prompt 2", "prompt 3", ...]"""
+    
+    # Add memory instructions if previous prompts are provided
+    if request.previous_prompts and len(request.previous_prompts) > 0:
+        system_prompt += f"""
+
+IMPORTANT - Memory Context:
+You have been asked to generate prompts for this concept before. Below are previous prompts that were generated for this workflow. You MUST avoid generating prompts that are too similar to these previous ones. Create NEW and DIFFERENT variations while still staying true to the concept.
+
+Previous prompts to avoid similarity with:
+{chr(10).join([f"- {prompt}" for prompt in request.previous_prompts[:20]])}
+
+Remember: Generate FRESH, UNIQUE prompts that are different from the previous ones, but still relate to the concept."""
+    
+    system_prompt += """
 
 Example format:
 ["A serene sunrise over a misty mountain range with birds flying in the distance", "The same mountain range at midday with hikers on a trail", "The mountain range at sunset with a campfire in the foreground"]
@@ -120,17 +139,82 @@ Generate the prompts now:"""
     
     try:
         # Generate prompts using LLM
+        # Convert to ChatMessage objects (required by LLM client)
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_message)
         ]
+        
+        # Pretty print logging: Log the full request being sent to ChatGPT
+        logger.debug("\n" + "╔" + "═" * 78 + "╗")
+        logger.debug("║" + " " * 20 + "🚀 OPENAI API REQUEST" + " " * 38 + "║")
+        logger.debug("╠" + "═" * 78 + "╣")
+        logger.debug("║ " + f"📋 Request Details:".ljust(77) + "║")
+        logger.debug("║ " + f"   • Concept: {request.concept}".ljust(77) + "║")
+        logger.debug("║ " + f"   • Number of Clips: {request.number_of_clips}".ljust(77) + "║")
+        if request.previous_prompts and len(request.previous_prompts) > 0:
+            logger.debug("║ " + f"   • Previous Prompts: {len(request.previous_prompts)} prompts in memory".ljust(77) + "║")
+        logger.debug("╠" + "─" * 78 + "╣")
+        logger.debug("║ " + f"⚙️  API Configuration:".ljust(77) + "║")
+        logger.debug("║ " + f"   • Model: {settings.openai_model}".ljust(77) + "║")
+        logger.debug("║ " + f"   • Temperature: {settings.openai_temperature}".ljust(77) + "║")
+        logger.debug("║ " + f"   • Stream: False".ljust(77) + "║")
+        logger.debug("╠" + "─" * 78 + "╣")
+        logger.debug("║ " + f"💬 Messages Being Sent:".ljust(77) + "║")
+        
+        for i, msg in enumerate(messages, 1):
+            role_icon = "🤖" if msg.role == "system" else "👤"
+            logger.debug("║ " + f"   {role_icon} Message {i} ({msg.role.upper()}):".ljust(77) + "║")
+            logger.debug("║ " + f"      ┌─ Content ({len(msg.content)} chars)".ljust(77) + "║")
+            
+            # Format content with proper indentation
+            content_lines = msg.content.split('\n')
+            for line in content_lines:
+                # Truncate very long lines for readability
+                if len(line) > 70:
+                    logger.debug("║ " + f"      │ {line[:67]}...".ljust(77) + "║")
+                else:
+                    logger.debug("║ " + f"      │ {line}".ljust(77) + "║")
+            logger.debug("║ " + f"      └─".ljust(77) + "║")
+            if i < len(messages):
+                logger.debug("║ " + "".ljust(77) + "║")
+        
+        logger.debug("╚" + "═" * 78 + "╝\n")
         
         response_content = await llm_client.chat(
             messages=messages,
-            model="gpt-4-turbo-preview",
-            temperature=0.8,  # Higher temperature for more creative variations
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
             stream=False
         )
+        
+        # Pretty print logging: Log the response from ChatGPT
+        logger.debug("\n" + "╔" + "═" * 78 + "╗")
+        logger.debug("║" + " " * 18 + "✅ OPENAI API RESPONSE" + " " * 38 + "║")
+        logger.debug("╠" + "═" * 78 + "╣")
+        logger.debug("║ " + f"📊 Response Summary:".ljust(77) + "║")
+        logger.debug("║ " + f"   • Length: {len(response_content)} characters".ljust(77) + "║")
+        logger.debug("║ " + f"   • Lines: {len(response_content.split(chr(10)))}".ljust(77) + "║")
+        logger.debug("╠" + "─" * 78 + "╣")
+        logger.debug("║ " + f"📝 Response Content:".ljust(77) + "║")
+        logger.debug("║ " + f"   ┌─".ljust(77) + "║")
+        
+        # Format response content with proper indentation
+        content_lines = response_content.split('\n')
+        max_lines_to_show = 50  # Show first 50 lines, then truncate
+        
+        for i, line in enumerate(content_lines[:max_lines_to_show]):
+            if len(line) > 70:
+                logger.debug("║ " + f"   │ {line[:67]}...".ljust(77) + "║")
+            else:
+                logger.debug("║ " + f"   │ {line}".ljust(77) + "║")
+        
+        if len(content_lines) > max_lines_to_show:
+            remaining = len(content_lines) - max_lines_to_show
+            logger.debug("║ " + f"   │ ... ({remaining} more lines) ...".ljust(77) + "║")
+        
+        logger.debug("║ " + f"   └─".ljust(77) + "║")
+        logger.debug("╚" + "═" * 78 + "╝\n")
         
         # Parse the response to extract prompts
         prompts = _parse_prompts_from_response(response_content, request.number_of_clips)

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     
     # OpenAI Configuration
     openai_api_key: str
+    openai_model: str = "gpt-4-turbo-preview"  # Default OpenAI model
+    openai_temperature: float = 1.0  # Default temperature (1.0 works for all models)
     
     # AI Provider Configuration
     ai_provider: str = "openai"  # "openai" or "openai-compatible"

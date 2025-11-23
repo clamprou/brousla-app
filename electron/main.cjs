@@ -27,6 +27,15 @@ function createWindow() {
 
   const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
   if (getIsDev()) {
+    // Enable remote debugging for renderer process (for VS Code attachment)
+    // This allows VS Code to attach to the renderer process via Chrome DevTools Protocol
+    mainWindow.webContents.on('did-frame-finish-load', () => {
+      // Enable remote debugging
+      if (process.env.ELECTRON_ENABLE_LOGGING) {
+        console.log('Renderer process ready for debugging')
+      }
+    })
+    
     mainWindow.loadURL(`http://localhost:${devServerPort}`)
     // Always open DevTools in development for debugging
     // Only skip if VS Code debugger is attaching

@@ -55,6 +55,7 @@ class PromptGenerationRequest(BaseModel):
     """Prompt generation request model."""
     concept: str
     number_of_clips: int
+    previous_prompts: Optional[List[str]] = None
 
 
 class PromptGenerationResponse(BaseModel):

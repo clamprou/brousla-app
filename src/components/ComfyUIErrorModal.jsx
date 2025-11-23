@@ -33,7 +33,7 @@ export default function ComfyUIErrorModal({ isOpen, onClose }) {
             <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside">
               <li>Open a terminal/command prompt</li>
               <li>Navigate to your ComfyUI directory</li>
-              <li>Run: <code className="bg-gray-900 px-1 rounded">python main.py</code></li>
+              <li>Start ComfyUI either by running the script file or with python: <code className="bg-gray-900 px-1 rounded">python main.py</code></li>
               <li>Wait for the server to start (usually on port 8188)</li>
             </ol>
           </div>

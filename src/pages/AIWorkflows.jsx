@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff } from 'lucide-react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff, Loader2 } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
 import OutputFolderModal from '../components/OutputFolderModal.jsx'
@@ -240,17 +240,37 @@ export default function AIWorkflows() {
         
         {workflows.length > 0 ? (
           <div className="space-y-4">
-            {workflows.map((workflow) => (
-              <div key={workflow.id} className="bg-gray-800 border border-gray-700 rounded-lg p-5 hover:bg-gray-750 transition-colors">
+            {workflows.map((workflow) => {
+              const state = getWorkflowState(workflow.id)
+              const isActive = state.isActive
+              const isRunning = state.isRunning
+              
+              // Determine card styling based on state
+              let cardClasses = 'bg-gray-800 border rounded-lg p-5 hover:bg-gray-750 transition-colors relative'
+              if (isRunning) {
+                // Blue border for running state
+                cardClasses += ' border-blue-600 bg-blue-600/5'
+              } else if (isActive) {
+                // Green border and subtle green background for activated state
+                cardClasses += ' border-green-600 bg-green-600/10'
+              } else {
+                // Default gray border for inactive state
+                cardClasses += ' border-gray-700'
+              }
+              
+              return (
+              <div key={workflow.id} className={cardClasses}>
+                {/* Loading overlay for running state */}
+                {isRunning && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-blue-600/10 rounded-lg z-10 pointer-events-none">
+                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+                  </div>
+                )}
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <h4 className="font-medium text-base text-gray-200">{workflow.name}</h4>
                       {(() => {
-                        const state = getWorkflowState(workflow.id)
-                        const isActive = state.isActive
-                        const isRunning = state.isRunning
-                        
                         // Determine badge color and text
                         let badgeClass, badgeText
                         if (isRunning) {
@@ -298,19 +318,17 @@ export default function AIWorkflows() {
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     {(() => {
-                      const state = getWorkflowState(workflow.id)
-                      const isActive = state.isActive
                       const isProcessing = activatingWorkflow === workflow.id
                       
                       return (
                         <button
                           onClick={() => handleToggleWorkflow(workflow.id, isActive)}
-                          disabled={isProcessing || state.isRunning}
+                          disabled={isProcessing || isRunning}
                           className={`p-2 rounded-lg transition-colors ${
                             isActive
                               ? 'text-green-400 hover:text-green-300 hover:bg-green-600/20'
                               : 'text-gray-400 hover:text-red-300 hover:bg-red-600/20'
-                          } ${isProcessing || state.isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${isProcessing || isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                           title={isActive ? 'Deactivate Workflow' : 'Activate Workflow'}
                         >
                           {isActive ? (
@@ -338,7 +356,8 @@ export default function AIWorkflows() {
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="text-center py-12">

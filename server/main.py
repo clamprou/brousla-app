@@ -37,6 +37,7 @@ PREFERENCES_PATH = os.path.join(DATA_DIR, 'preferences.json')
 HISTORY_PATH = os.path.join(DATA_DIR, 'history.json')
 WORKFLOW_STATE_PATH = os.path.join(DATA_DIR, 'workflow_state.json')
 STORED_WORKFLOWS_METADATA_PATH = os.path.join(DATA_DIR, 'stored_workflows_metadata.json')
+PROMPT_HISTORY_PATH = os.path.join(DATA_DIR, 'prompt_history.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(WORKFLOWS_DIR, exist_ok=True)
@@ -123,6 +124,16 @@ class SuppressStatusLogFilter(logging.Filter):
 # Apply the filter to uvicorn access logger
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.addFilter(SuppressStatusLogFilter())
+
+# Configure logging level to DEBUG for our modules
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Set specific loggers to DEBUG
+logging.getLogger("ai_agent").setLevel(logging.DEBUG)
+logging.getLogger("workflow_executor").setLevel(logging.DEBUG)
+logging.getLogger("workflow_scheduler").setLevel(logging.DEBUG)
 
 
 def _read_json(path: str, default):
@@ -281,6 +292,50 @@ def _update_workflow_state(workflow_id: str, updates: dict) -> dict:
 def _get_all_workflow_states() -> dict:
     """Get states for all workflows"""
     return _read_json(WORKFLOW_STATE_PATH, {})
+
+
+# Prompt History Management Functions
+def _get_prompt_history(workflow_id: str) -> list:
+    """Get prompt history for a specific workflow"""
+    history = _read_json(PROMPT_HISTORY_PATH, {})
+    return history.get(workflow_id, [])
+
+
+def _save_prompt_history(workflow_id: str, prompts: list, concept: str) -> None:
+    """Save new prompts to history for a workflow"""
+    history = _read_json(PROMPT_HISTORY_PATH, {})
+    
+    if workflow_id not in history:
+        history[workflow_id] = []
+    
+    # Create new entry
+    entry = {
+        "timestamp": datetime.utcnow().isoformat() + 'Z',
+        "concept": concept,
+        "prompts": prompts
+    }
+    
+    # Add to history (most recent first)
+    history[workflow_id].insert(0, entry)
+    
+    # Keep only last 20 entries per workflow
+    if len(history[workflow_id]) > 20:
+        history[workflow_id] = history[workflow_id][:20]
+    
+    _write_json(PROMPT_HISTORY_PATH, history)
+
+
+def _get_recent_prompts(workflow_id: str, limit: int = 20) -> list:
+    """Get recent prompts (flattened list) from history for a workflow"""
+    history = _get_prompt_history(workflow_id)
+    
+    # Flatten all prompts from history entries
+    all_prompts = []
+    for entry in history[:limit]:
+        if isinstance(entry, dict) and "prompts" in entry:
+            all_prompts.extend(entry["prompts"])
+    
+    return all_prompts
 
 
 # In-memory storage for workflows (synced from frontend)
@@ -1332,6 +1387,45 @@ def execute_workflow_manual(workflow_id: str):
             "success": True,
             "workflow_id": workflow_id,
             "message": "Workflow execution started"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/workflows/{workflow_id}/prompt-history')
+def get_prompt_history(workflow_id: str):
+    """Get prompt history for a specific workflow"""
+    try:
+        history = _get_prompt_history(workflow_id)
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "history": history,
+            "count": len(history)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.delete('/workflows/{workflow_id}/prompt-history')
+def clear_prompt_history(workflow_id: str):
+    """Clear prompt history for a specific workflow"""
+    try:
+        history = _read_json(PROMPT_HISTORY_PATH, {})
+        if workflow_id in history:
+            del history[workflow_id]
+            _write_json(PROMPT_HISTORY_PATH, history)
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Prompt history cleared"
         }
     except Exception as e:
         return {

@@ -173,8 +173,21 @@ def _execute_text_to_video_workflow(
 ) -> Dict:
     """Execute a text-to-video workflow"""
     try:
-        # Get prompts from AI agent
-        prompts = generate_prompts(concept, numberOfClips)
+        # Import prompt history functions (lazy import to avoid circular import)
+        try:
+            from main import _get_recent_prompts, _save_prompt_history
+            
+            # Get previous prompts from memory
+            previous_prompts = _get_recent_prompts(workflow_id, limit=20)
+            
+            # Get prompts from AI agent (with memory context)
+            prompts = generate_prompts(concept, numberOfClips, previous_prompts=previous_prompts if previous_prompts else None)
+            
+            # Save new prompts to history
+            _save_prompt_history(workflow_id, prompts, concept)
+        except ImportError:
+            # Fallback if import fails (shouldn't happen in normal operation)
+            prompts = generate_prompts(concept, numberOfClips)
         
         if numberOfClips == 1:
             # Single clip workflow - use existing flow
@@ -506,8 +519,21 @@ def _execute_image_to_video_workflow(
 ) -> Dict:
     """Execute an image-to-video workflow (generate image first, then video)"""
     try:
-        # Get prompts from AI agent for video generation
-        prompts = generate_prompts(concept, numberOfClips)
+        # Import prompt history functions (lazy import to avoid circular import)
+        try:
+            from main import _get_recent_prompts, _save_prompt_history
+            
+            # Get previous prompts from memory
+            previous_prompts = _get_recent_prompts(workflow_id, limit=20)
+            
+            # Get prompts from AI agent for video generation (with memory context)
+            prompts = generate_prompts(concept, numberOfClips, previous_prompts=previous_prompts if previous_prompts else None)
+            
+            # Save new prompts to history
+            _save_prompt_history(workflow_id, prompts, concept)
+        except ImportError:
+            # Fallback if import fails (shouldn't happen in normal operation)
+            prompts = generate_prompts(concept, numberOfClips)
         
         if numberOfClips == 1:
             # Single clip workflow - use existing flow
