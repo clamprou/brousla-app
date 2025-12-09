@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff, Loader2 } from 'lucide-react'
+import { Bot, Workflow, Zap, ArrowRight, ImageIcon, Film, Type, Upload, Sparkles, Plus, Play, Edit, Trash2, Clock, ChevronDown, ChevronUp, Timer, Power, PowerOff, Loader2, X } from 'lucide-react'
 import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
 import OutputFolderModal from '../components/OutputFolderModal.jsx'
@@ -14,6 +14,9 @@ export default function AIWorkflows() {
   const [isHelpSectionExpanded, setIsHelpSectionExpanded] = useState(false)
   const [activatingWorkflow, setActivatingWorkflow] = useState(null)
   const [showOutputFolderModal, setShowOutputFolderModal] = useState(false)
+  const [cancellingWorkflow, setCancellingWorkflow] = useState(null)
+  const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, workflowId: null })
+  const [errorModal, setErrorModal] = useState({ isOpen: false, message: '' })
 
   // Load workflow states from backend
   const loadWorkflowStates = React.useCallback(async () => {
@@ -119,16 +122,52 @@ export default function AIWorkflows() {
           // Reload states
           await loadWorkflowStates()
         } else {
-          alert(data.error || 'Failed to update workflow state')
+          setErrorModal({ isOpen: true, message: data.error || 'Failed to update workflow state' })
         }
       } else {
-        alert('Failed to update workflow state')
+        setErrorModal({ isOpen: true, message: 'Failed to update workflow state' })
       }
     } catch (error) {
       console.error('Error toggling workflow:', error)
-      alert('Error updating workflow state')
+      setErrorModal({ isOpen: true, message: 'Error updating workflow state' })
     } finally {
       setActivatingWorkflow(null)
+    }
+  }
+
+  // Handle cancel workflow execution
+  const handleCancelWorkflow = (workflowId) => {
+    setCancelConfirmModal({ isOpen: true, workflowId })
+  }
+
+  const confirmCancelWorkflow = async () => {
+    const workflowId = cancelConfirmModal.workflowId
+    setCancelConfirmModal({ isOpen: false, workflowId: null })
+    
+    if (!workflowId) return
+    
+    setCancellingWorkflow(workflowId)
+    try {
+      const response = await fetch(`${BACKEND_URL}/workflows/${workflowId}/cancel`, {
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          // Reload states immediately
+          await loadWorkflowStates()
+        } else {
+          setErrorModal({ isOpen: true, message: data.error || 'Failed to cancel workflow' })
+        }
+      } else {
+        setErrorModal({ isOpen: true, message: 'Failed to cancel workflow' })
+      }
+    } catch (error) {
+      console.error('Error cancelling workflow:', error)
+      setErrorModal({ isOpen: true, message: 'Error cancelling workflow' })
+    } finally {
+      setCancellingWorkflow(null)
     }
   }
 
@@ -262,8 +301,26 @@ export default function AIWorkflows() {
               <div key={workflow.id} className={cardClasses}>
                 {/* Loading overlay for running state */}
                 {isRunning && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-blue-600/10 rounded-lg z-10 pointer-events-none">
-                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-600/10 rounded-lg z-10">
+                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin mb-2" />
+                    <button
+                      onClick={() => handleCancelWorkflow(workflow.id)}
+                      disabled={cancellingWorkflow === workflow.id}
+                      className="px-2 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Cancel Workflow Execution"
+                    >
+                      {cancellingWorkflow === workflow.id ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Cancelling...</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="h-3 w-3" />
+                          <span>Cancel</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
                 <div className="flex items-start justify-between">
@@ -472,6 +529,30 @@ export default function AIWorkflows() {
         onClose={() => setShowOutputFolderModal(false)}
         onFolderSelected={() => setShowOutputFolderModal(false)}
         navigateBackOnClose={true}
+      />
+
+      {/* Cancel Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={cancelConfirmModal.isOpen}
+        onClose={() => setCancelConfirmModal({ isOpen: false, workflowId: null })}
+        onConfirm={confirmCancelWorkflow}
+        title="Cancel Workflow Execution"
+        message="Are you sure you want to cancel this workflow execution? The current execution will be stopped."
+        confirmText="Cancel Execution"
+        cancelText="Keep Running"
+        type="danger"
+      />
+
+      {/* Error Modal */}
+      <ConfirmationModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, message: '' })}
+        onConfirm={() => setErrorModal({ isOpen: false, message: '' })}
+        title="Error"
+        message={errorModal.message}
+        confirmText="OK"
+        cancelText=""
+        type="danger"
       />
     </div>
   )

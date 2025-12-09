@@ -17,7 +17,12 @@ logger = logging.getLogger(__name__)
 AI_API_BASE_URL = os.getenv('AI_API_BASE_URL', 'http://localhost:8001')
 
 
-def generate_prompts(concept: str, numberOfClips: int, previous_prompts: Optional[List[str]] = None) -> List[str]:
+def generate_prompts(
+    concept: str, 
+    numberOfClips: int, 
+    previous_prompts: Optional[List[str]] = None,
+    previous_summaries: Optional[List[str]] = None
+) -> List[str]:
     """
     Generate prompts for each clip based on the concept and number of clips.
     
@@ -28,7 +33,8 @@ def generate_prompts(concept: str, numberOfClips: int, previous_prompts: Optiona
     Args:
         concept: The base concept/prompt for the workflow
         numberOfClips: Number of clips to generate
-        previous_prompts: Optional list of previous prompts to avoid similarity
+        previous_prompts: Optional list of previous prompts to avoid similarity (backward compatibility)
+        previous_summaries: Optional list of previous generation summaries to avoid similarity (preferred)
         
     Returns:
         List of prompts, one for each clip. Each prompt is distinct but related
@@ -52,8 +58,11 @@ def generate_prompts(concept: str, numberOfClips: int, previous_prompts: Optiona
         "number_of_clips": numberOfClips
     }
     
-    # Add previous prompts if provided
-    if previous_prompts:
+    # Prefer summaries over full prompts for efficiency
+    if previous_summaries:
+        payload["previous_summaries"] = previous_summaries
+    elif previous_prompts:
+        # Fallback to previous prompts for backward compatibility
         payload["previous_prompts"] = previous_prompts
     
     # Debug logging: Log the full request details

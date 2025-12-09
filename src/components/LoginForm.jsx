@@ -1,42 +1,64 @@
 import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { AlertCircle, Loader2, LogIn, UserPlus } from 'lucide-react'
+import { AlertCircle, Loader2, LogIn, UserPlus, CheckCircle } from 'lucide-react'
 
 export default function LoginForm({ onSuccess }) {
   const { login, register } = useAuth()
   const [isRegisterMode, setIsRegisterMode] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [registrationSuccess, setRegistrationSuccess] = useState(false)
+  const [registeredEmail, setRegisteredEmail] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
+    setRegistrationSuccess(false)
     setIsLoading(true)
 
     try {
       let result
       if (isRegisterMode) {
+        // Validate password confirmation
+        if (password !== passwordConfirmation) {
+          setError('Passwords do not match')
+          setIsLoading(false)
+          return
+        }
+        
         // Server expects email and password for registration
         result = await register({
           email,
           password,
         })
+        
+        if (result.success) {
+          setRegisteredEmail(email) // Store email before clearing
+          setRegistrationSuccess(true)
+          // Clear form
+          setEmail('')
+          setPassword('')
+          setPasswordConfirmation('')
+        } else {
+          setError(result.error || 'Registration failed')
+        }
       } else {
         // Server expects email and password for login
         result = await login({
           email,
           password,
         })
-      }
 
-      if (result.success) {
-        if (onSuccess) {
-          onSuccess()
+        if (result.success) {
+          if (onSuccess) {
+            onSuccess()
+          }
+        } else {
+          setError(result.error || 'Authentication failed')
         }
-      } else {
-        setError(result.error || 'Authentication failed')
       }
     } catch (err) {
       console.error('Authentication error:', err)
@@ -124,6 +146,37 @@ export default function LoginForm({ onSuccess }) {
           />
         </div>
 
+        {isRegisterMode && (
+          <div>
+            <label htmlFor="passwordConfirmation" className="block text-sm font-medium text-gray-300 mb-1">
+              Confirm Password
+            </label>
+            <input
+              id="passwordConfirmation"
+              type="password"
+              value={passwordConfirmation}
+              onChange={(e) => setPasswordConfirmation(e.target.value)}
+              required
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              placeholder="••••••••"
+            />
+          </div>
+        )}
+
+        {registrationSuccess && (
+          <div className="p-4 bg-green-900/20 border border-green-600/30 rounded-lg">
+            <div className="flex items-start gap-2">
+              <CheckCircle className="h-5 w-5 text-green-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-green-300 mb-1">Registration Successful</p>
+                <p className="text-sm text-green-200">
+                  A confirmation email has been sent to <strong>{registeredEmail}</strong>. Please check your inbox to complete registration.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="p-4 bg-red-900/20 border border-red-600/30 rounded-lg">
             <div className="flex items-start gap-2 mb-2">
@@ -169,6 +222,9 @@ export default function LoginForm({ onSuccess }) {
             onClick={() => {
               setIsRegisterMode(!isRegisterMode)
               setError(null)
+              setRegistrationSuccess(false)
+              setPasswordConfirmation('')
+              setRegisteredEmail('')
             }}
             className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
           >

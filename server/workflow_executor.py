@@ -15,6 +15,27 @@ from datetime import datetime, timedelta
 from ai_agent import generate_prompts
 
 
+def _check_cancellation(workflow_id: str, get_state_callback) -> bool:
+    """
+    Check if workflow execution has been cancelled.
+    
+    Args:
+        workflow_id: Workflow ID to check
+        get_state_callback: Callback to get workflow state
+        
+    Returns:
+        True if cancelled, False otherwise
+    """
+    if not get_state_callback:
+        return False
+    
+    try:
+        state = get_state_callback(workflow_id)
+        return state.get('cancelled', False)
+    except Exception:
+        return False
+
+
 def _is_comfyui_connection_error(exception: Exception) -> bool:
     """Check if an exception indicates ComfyUI server is offline/not reachable"""
     error_str = str(exception).lower()
@@ -75,6 +96,23 @@ def execute_workflow(
         Dict with success status and execution details
     """
     try:
+        # Check if workflow was cancelled before starting
+        if get_state_callback:
+            state = get_state_callback(workflow_id)
+            if state.get('cancelled', False):
+                # Clear cancelled flag and return early
+                if update_state_callback:
+                    update_state_callback(workflow_id, {
+                        "isRunning": False,
+                        "cancelled": False
+                    })
+                return {
+                    "success": False,
+                    "error": "Workflow execution was cancelled",
+                    "workflow_id": workflow_id,
+                    "cancelled": True
+                }
+        
         # Determine workflow type
         is_image_to_video = workflow.get('imageWorkflowFile') is not None
         
@@ -101,11 +139,12 @@ def execute_workflow(
         if is_image_to_video and not image_workflow:
             raise Exception("Image-to-video workflow missing imageWorkflowFile")
         
-        # Update state: set isRunning=True
+        # Update state: set isRunning=True and clear cancelled flag
         if update_state_callback:
             update_state_callback(workflow_id, {
                 "isRunning": True,
-                "lastExecutionTime": datetime.utcnow().isoformat() + 'Z'
+                "lastExecutionTime": datetime.utcnow().isoformat() + 'Z',
+                "cancelled": False  # Clear cancelled flag when starting execution
             })
         
         if is_image_to_video:
@@ -175,13 +214,18 @@ def _execute_text_to_video_workflow(
     try:
         # Import prompt history functions (lazy import to avoid circular import)
         try:
-            from main import _get_recent_prompts, _save_prompt_history
+            from main import _get_relevant_prompts, _save_prompt_history
             
-            # Get previous prompts from memory
-            previous_prompts = _get_recent_prompts(workflow_id, limit=20)
+            # Get relevant prompts and summaries from memory using embeddings
+            previous_prompts, previous_summaries = _get_relevant_prompts(workflow_id, concept, limit=5)
             
-            # Get prompts from AI agent (with memory context)
-            prompts = generate_prompts(concept, numberOfClips, previous_prompts=previous_prompts if previous_prompts else None)
+            # Get prompts from AI agent (with memory context - prefer summaries if available)
+            prompts = generate_prompts(
+                concept, 
+                numberOfClips, 
+                previous_prompts=previous_prompts if previous_prompts else None,
+                previous_summaries=previous_summaries if previous_summaries else None
+            )
             
             # Save new prompts to history
             _save_prompt_history(workflow_id, prompts, concept)
@@ -308,8 +352,22 @@ def _execute_single_text_to_video_clip(
                 "lastPromptId": prompt_id
             })
         
-        # Poll for completion
-        _poll_for_completion(prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
+        # Poll for completion (with cancellation check)
+        _poll_for_completion(prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
+        
+        # Check for cancellation after polling
+        if _check_cancellation(workflow_id, get_state_callback):
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "isRunning": False,
+                    "cancelled": False  # Clear cancelled flag
+                })
+            return {
+                "success": False,
+                "error": "Workflow execution was cancelled",
+                "workflow_id": workflow_id,
+                "cancelled": True
+            }
         
         # Get result and copy to output folder if specified
         if output_folder:
@@ -332,7 +390,8 @@ def _execute_single_text_to_video_clip(
             update_state_callback(workflow_id, {
                 "isRunning": False,
                 "executionCount": current_count + 1,
-                "nextExecutionTime": next_execution.isoformat() + 'Z'
+                "nextExecutionTime": next_execution.isoformat() + 'Z',
+                "cancelled": False  # Clear cancelled flag on successful completion
             })
         
         return {
@@ -442,8 +501,17 @@ def _execute_multi_clip_text_to_video(
                     "lastPromptId": prompt_id
                 })
             
-            # Poll for completion
-            _poll_for_completion(prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
+            # Poll for completion (with cancellation check)
+            _poll_for_completion(prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
+            
+            # Check for cancellation after polling
+            if _check_cancellation(workflow_id, get_state_callback):
+                if update_state_callback:
+                    update_state_callback(workflow_id, {
+                        "isRunning": False,
+                        "cancelled": False  # Clear cancelled flag
+                    })
+                raise Exception("Workflow execution was cancelled")
             
             # Download the generated video to temp directory
             clip_path = _download_clip_to_temp(
@@ -483,7 +551,8 @@ def _execute_multi_clip_text_to_video(
             update_state_callback(workflow_id, {
                 "isRunning": False,
                 "executionCount": current_count + 1,
-                "nextExecutionTime": next_execution.isoformat() + 'Z'
+                "nextExecutionTime": next_execution.isoformat() + 'Z',
+                "cancelled": False  # Clear cancelled flag on successful completion
             })
         
         return {
@@ -618,8 +687,17 @@ def _execute_single_image_to_video_clip(
         
         image_prompt_id = result.get('prompt_id')
         
-        # Poll for image completion
-        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300)  # 5 minutes for image
+        # Poll for image completion (with cancellation check)
+        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 5 minutes for image
+        
+        # Check for cancellation after polling
+        if _check_cancellation(workflow_id, get_state_callback):
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "isRunning": False,
+                    "cancelled": False  # Clear cancelled flag
+                })
+            raise Exception("Workflow execution was cancelled")
         
         # Get image result
         result_response = requests.get(
@@ -722,8 +800,8 @@ def _execute_single_image_to_video_clip(
                 "lastPromptId": video_prompt_id
             })
         
-        # Poll for video completion
-        _poll_for_completion(video_prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
+        # Poll for video completion (with cancellation check)
+        _poll_for_completion(video_prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
         
         # Get result and copy to output folder if specified
         if output_folder:
@@ -746,7 +824,8 @@ def _execute_single_image_to_video_clip(
             update_state_callback(workflow_id, {
                 "isRunning": False,
                 "executionCount": current_count + 1,
-                "nextExecutionTime": next_execution.isoformat() + 'Z'
+                "nextExecutionTime": next_execution.isoformat() + 'Z',
+                "cancelled": False  # Clear cancelled flag on successful completion
             })
         
         return {
@@ -811,8 +890,17 @@ def _execute_multi_clip_image_to_video(
         
         image_prompt_id = result.get('prompt_id')
         
-        # Poll for image completion
-        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300)  # 5 minutes for image
+        # Poll for image completion (with cancellation check)
+        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 5 minutes for image
+        
+        # Check for cancellation after polling
+        if _check_cancellation(workflow_id, get_state_callback):
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "isRunning": False,
+                    "cancelled": False  # Clear cancelled flag
+                })
+            raise Exception("Workflow execution was cancelled")
         
         # Get image result
         result_response = requests.get(
@@ -944,7 +1032,8 @@ def _execute_multi_clip_image_to_video(
             update_state_callback(workflow_id, {
                 "isRunning": False,
                 "executionCount": current_count + 1,
-                "nextExecutionTime": next_execution.isoformat() + 'Z'
+                "nextExecutionTime": next_execution.isoformat() + 'Z',
+                "cancelled": False  # Clear cancelled flag on successful completion
             })
         
         return {
@@ -1121,12 +1210,44 @@ def _cleanup_temp_files(clip_paths: List[str], temp_dir: Optional[str]) -> None:
         print(f"Warning: Error during cleanup: {e}")
 
 
-def _poll_for_completion(prompt_id: str, comfyui_url: str, timeout: int = 300) -> None:
-    """Poll ComfyUI for workflow completion"""
+def _poll_for_completion(
+    prompt_id: str, 
+    comfyui_url: str, 
+    timeout: int = 300, 
+    workflow_id: Optional[str] = None,
+    get_state_callback=None
+) -> None:
+    """
+    Poll ComfyUI for workflow completion.
+    
+    This function will block until ComfyUI reports the workflow as 'completed',
+    or until timeout is reached. It will NOT return early - it will only return
+    when ComfyUI has actually finished execution.
+    
+    Args:
+        prompt_id: ComfyUI prompt ID to poll for
+        comfyui_url: ComfyUI server URL
+        timeout: Maximum time to wait in seconds
+        workflow_id: Optional workflow ID for cancellation checking
+        get_state_callback: Optional callback to get workflow state for cancellation checking
+        
+    Raises:
+        Exception: If workflow is cancelled or ComfyUI reports an error
+        TimeoutError: If workflow doesn't complete within timeout
+    """
     start_time = time.time()
     poll_interval = 2  # Poll every 2 seconds
+    last_status = None
+    
+    print(f"Starting to poll for ComfyUI completion: prompt_id={prompt_id}, timeout={timeout}s")
     
     while time.time() - start_time < timeout:
+        # Check for cancellation if workflow_id and callback are provided
+        if workflow_id and get_state_callback:
+            if _check_cancellation(workflow_id, get_state_callback):
+                print(f"Workflow {workflow_id} was cancelled during polling")
+                raise Exception("Workflow execution was cancelled")
+        
         try:
             response = requests.get(
                 f'http://127.0.0.1:8000/status/{prompt_id}',
@@ -1138,17 +1259,37 @@ def _poll_for_completion(prompt_id: str, comfyui_url: str, timeout: int = 300) -
                 result = response.json()
                 if result.get('success'):
                     status = result.get('status')
+                    
+                    # Log status changes
+                    if status != last_status:
+                        print(f"ComfyUI status for prompt {prompt_id}: {status} (was: {last_status})")
+                        last_status = status
+                    
                     if status == 'completed':
-                        return  # Success
+                        print(f"ComfyUI execution completed for prompt {prompt_id}")
+                        return  # Success - ComfyUI has finished execution
                     elif status == 'error':
-                        raise Exception(f"ComfyUI execution error: {result.get('message', 'Unknown error')}")
-                    # Otherwise, continue polling
+                        error_msg = result.get('message', 'Unknown error')
+                        print(f"ComfyUI execution error for prompt {prompt_id}: {error_msg}")
+                        raise Exception(f"ComfyUI execution error: {error_msg}")
+                    # Otherwise (status is 'running', 'pending', etc.), continue polling
+                    # Do NOT return - we must wait for 'completed' status
+                else:
+                    # If success is False, log but continue polling (might be temporary error)
+                    error_msg = result.get('message', 'Unknown error')
+                    print(f"Status check returned success=False for prompt {prompt_id}: {error_msg}")
+                    # Continue polling - don't return early
         
-        except requests.exceptions.RequestException:
-            pass  # Continue polling on network errors
+        except requests.exceptions.RequestException as e:
+            # Continue polling on network errors (might be temporary)
+            print(f"Network error while polling for prompt {prompt_id}: {e}")
+            # Don't return - continue polling
         
         time.sleep(poll_interval)
     
+    # Timeout reached - this is an error condition
+    elapsed = time.time() - start_time
+    print(f"Polling timeout reached for prompt {prompt_id} after {elapsed:.1f}s")
     raise TimeoutError(f"Workflow execution timed out after {timeout} seconds")
 
 

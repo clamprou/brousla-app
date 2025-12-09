@@ -1,7 +1,10 @@
 """AI chat routes."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from app.models import ChatRequest, PromptGenerationRequest, PromptGenerationResponse, ChatMessage
+from app.models import (
+    ChatRequest, PromptGenerationRequest, PromptGenerationResponse, ChatMessage,
+    EmbeddingRequest, EmbeddingResponse, SummarizePromptsRequest, SummarizePromptsResponse
+)
 from app.auth import get_current_user
 from app.rate_limit import get_rate_limiter
 from app.llm.factory import get_llm_client
@@ -113,8 +116,20 @@ Requirements:
 5. Return ONLY a JSON array of strings, with no additional text or explanation
 6. Format: ["prompt 1", "prompt 2", "prompt 3", ...]"""
     
-    # Add memory instructions if previous prompts are provided
-    if request.previous_prompts and len(request.previous_prompts) > 0:
+    # Add memory instructions if previous summaries or prompts are provided
+    # Prefer summaries over full prompts for efficiency
+    if request.previous_summaries and len(request.previous_summaries) > 0:
+        system_prompt += f"""
+
+IMPORTANT - Memory Context:
+You have been asked to generate prompts for this concept before. Below are summaries of previous generations that were created for this workflow. You MUST avoid generating prompts that are too similar to these previous ones. Create NEW and DIFFERENT variations while still staying true to the concept.
+
+Previous generation summaries to avoid similarity with:
+{chr(10).join([f"- {summary}" for summary in request.previous_summaries[:5]])}
+
+Remember: Generate FRESH, UNIQUE prompts that are different from the previous ones, but still relate to the concept."""
+    elif request.previous_prompts and len(request.previous_prompts) > 0:
+        # Fallback to full prompts for backward compatibility
         system_prompt += f"""
 
 IMPORTANT - Memory Context:
@@ -152,7 +167,9 @@ Generate the prompts now:"""
         logger.debug("║ " + f"📋 Request Details:".ljust(77) + "║")
         logger.debug("║ " + f"   • Concept: {request.concept}".ljust(77) + "║")
         logger.debug("║ " + f"   • Number of Clips: {request.number_of_clips}".ljust(77) + "║")
-        if request.previous_prompts and len(request.previous_prompts) > 0:
+        if request.previous_summaries and len(request.previous_summaries) > 0:
+            logger.debug("║ " + f"   • Previous Summaries: {len(request.previous_summaries)} summaries in memory".ljust(77) + "║")
+        elif request.previous_prompts and len(request.previous_prompts) > 0:
             logger.debug("║ " + f"   • Previous Prompts: {len(request.previous_prompts)} prompts in memory".ljust(77) + "║")
         logger.debug("╠" + "─" * 78 + "╣")
         logger.debug("║ " + f"⚙️  API Configuration:".ljust(77) + "║")
@@ -181,12 +198,15 @@ Generate the prompts now:"""
         
         logger.debug("╚" + "═" * 78 + "╝\n")
         
-        response_content = await llm_client.chat(
+        response_content_raw = await llm_client.chat(
             messages=messages,
             model=settings.openai_model,
             temperature=settings.openai_temperature,
             stream=False
         )
+        
+        # When stream=False, chat returns a string
+        response_content = response_content_raw if isinstance(response_content_raw, str) else ""
         
         # Pretty print logging: Log the response from ChatGPT
         logger.debug("\n" + "╔" + "═" * 78 + "╗")
@@ -274,4 +294,102 @@ def _parse_prompts_from_response(response: str, expected_count: int) -> list:
     
     # Last resort: return the whole response as a single prompt (will be handled by caller)
     return [response.strip()] if response.strip() else []
+
+
+@router.post("/embeddings", response_model=EmbeddingResponse)
+async def get_embeddings(request: EmbeddingRequest):
+    """
+    Generate embeddings for text using OpenAI embeddings API.
+    
+    This endpoint is designed for internal server-to-server calls and does not
+    require authentication.
+    """
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="text field is required and cannot be empty"
+        )
+    
+    try:
+        llm_client = get_llm_client()
+        
+        # Check if client has get_embedding method
+        if not hasattr(llm_client, 'get_embedding'):
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="Embedding generation not supported by current LLM client"
+            )
+        
+        embedding = await llm_client.get_embedding(request.text)
+        
+        return EmbeddingResponse(embedding=embedding)
+    
+    except Exception as e:
+        logger.error(f"Failed to generate embedding: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate embedding: {str(e)}"
+        )
+
+
+@router.post("/summarize-prompts", response_model=SummarizePromptsResponse)
+async def summarize_prompts(request: SummarizePromptsRequest):
+    """
+    Generate a summary of video generation prompts.
+    
+    This endpoint is designed for internal server-to-server calls and does not
+    require authentication.
+    """
+    if not request.prompts or len(request.prompts) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="prompts field is required and cannot be empty"
+        )
+    
+    if not request.concept or not request.concept.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="concept field is required and cannot be empty"
+        )
+    
+    try:
+        # Create system prompt for summarization
+        system_prompt = """You are a prompt summarizer. Your task is to create a concise summary of video generation prompts, focusing on the key themes, subjects, and visual styles that should be avoided in future generations.
+
+Generate a 2-3 sentence summary that captures:
+1. The main themes and subjects
+2. The visual styles and cinematography approaches
+3. Any distinctive elements that should be avoided in future prompts
+
+Be concise and specific."""
+        
+        # Combine prompts into a single text
+        prompts_text = "\n\n".join([f"Prompt {i+1}: {prompt}" for i, prompt in enumerate(request.prompts)])
+        user_message = f"Concept: {request.concept}\n\nPrompts to summarize:\n{prompts_text}\n\nGenerate a concise summary:"
+        
+        llm_client = get_llm_client()
+        
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_message)
+        ]
+        
+        summary_response = await llm_client.chat(
+            messages=messages,
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            stream=False
+        )
+        
+        # When stream=False, chat returns a string
+        summary = summary_response if isinstance(summary_response, str) else ""
+        
+        return SummarizePromptsResponse(summary=summary.strip())
+    
+    except Exception as e:
+        logger.error(f"Failed to generate summary: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate summary: {str(e)}"
+        )
 

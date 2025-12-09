@@ -6,6 +6,7 @@ import ImageToVideo from './pages/ImageToVideo.jsx'
 import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
 import Profile from './pages/Profile.jsx'
+import EmailConfirmation from './pages/EmailConfirmation.jsx'
 import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
 import AIWorkflows from './pages/AIWorkflows.jsx'
 import CreateWorkflow from './pages/CreateWorkflow.jsx'
@@ -22,6 +23,12 @@ export default function App() {
   const [showConnectionModal, setShowConnectionModal] = useState(false)
   const [isCheckingConnection, setIsCheckingConnection] = useState(true)
   const previousActiveKeyRef = React.useRef('text-to-image')
+  
+  // Check if we're on email confirmation page
+  const isEmailConfirmation = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.has('token')
+  }, [])
 
   // Global navigation event to allow pages to trigger navigation without props drilling
   React.useEffect(() => {
@@ -142,6 +149,15 @@ export default function App() {
 
   // Show modal only when connection is not established and not on Settings page
   const shouldShowModal = showConnectionModal && activeKey !== 'settings'
+
+  // If email confirmation token is in URL, show EmailConfirmation page (outside ProtectedRoute)
+  if (isEmailConfirmation) {
+    return (
+      <AuthProvider>
+        <EmailConfirmation />
+      </AuthProvider>
+    )
+  }
 
   return (
     <AuthProvider>

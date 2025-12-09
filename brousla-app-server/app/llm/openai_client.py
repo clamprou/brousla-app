@@ -155,4 +155,31 @@ class OpenAIClient(LLMClient):
         logger.debug("╚" + "═" * 78 + "╝\n")
         
         return response.choices[0].message.content or ""
+    
+    async def get_embedding(self, text: str, model: str = "text-embedding-3-small") -> List[float]:
+        """
+        Generate embedding for text using OpenAI embeddings API.
+        
+        Args:
+            text: Text to generate embedding for
+            model: Embedding model to use (default: "text-embedding-3-small")
+            
+        Returns:
+            List of floats representing the embedding vector
+        """
+        try:
+            response = await self.client.embeddings.create(
+                model=model,
+                input=text
+            )
+            
+            # Extract embedding vector from response
+            embedding = response.data[0].embedding
+            
+            logger.debug(f"Generated embedding for text (length: {len(text)} chars, embedding dim: {len(embedding)})")
+            
+            return embedding
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {str(e)}")
+            raise
 

@@ -26,6 +26,22 @@ class User(BaseModel):
     """User response model."""
     id: str
     email: str
+    email_verified: bool = False
+
+
+class EmailConfirmationRequest(BaseModel):
+    """Email confirmation request model."""
+    token: str
+
+
+class ResendConfirmationRequest(BaseModel):
+    """Resend confirmation email request model."""
+    email: EmailStr
+
+
+class MessageResponse(BaseModel):
+    """Generic message response model."""
+    message: str
 
 
 # AI Chat Models
@@ -56,8 +72,31 @@ class PromptGenerationRequest(BaseModel):
     concept: str
     number_of_clips: int
     previous_prompts: Optional[List[str]] = None
+    previous_summaries: Optional[List[str]] = None
 
 
 class PromptGenerationResponse(BaseModel):
     """Prompt generation response model."""
     prompts: List[str]
+
+
+# Embedding and Summary Models
+class EmbeddingRequest(BaseModel):
+    """Embedding generation request model."""
+    text: str
+
+
+class EmbeddingResponse(BaseModel):
+    """Embedding generation response model."""
+    embedding: List[float]
+
+
+class SummarizePromptsRequest(BaseModel):
+    """Prompt summarization request model."""
+    prompts: List[str]
+    concept: str
+
+
+class SummarizePromptsResponse(BaseModel):
+    """Prompt summarization response model."""
+    summary: str

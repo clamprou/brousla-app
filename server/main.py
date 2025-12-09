@@ -6,14 +6,16 @@ import base64
 import shutil
 import traceback
 import logging
+import math
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, Query, UploadFile, File, Form, Body
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import uvicorn
+import requests
 
 # Import ComfyUI client
 from comfyui_client import ComfyUIClient
@@ -113,17 +115,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging to suppress access logs for /workflows/status and /workflows/sync
+# Configure logging to suppress access logs for /workflows/status, /workflows/sync, and /status/{prompt_id}
 # We'll create a custom filter for uvicorn access logger
 class SuppressStatusLogFilter(logging.Filter):
     def filter(self, record):
         message = str(record.getMessage())
         # Suppress logs for frequently polled endpoints
-        return "/workflows/status" not in message and "/workflows/sync" not in message
+        return (
+            "/workflows/status" not in message 
+            and "/workflows/sync" not in message
+            and "/status/" not in message  # Suppress /status/{prompt_id} endpoint logs
+        )
 
 # Apply the filter to uvicorn access logger
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.addFilter(SuppressStatusLogFilter())
+
+# Suppress urllib3 DEBUG logs (connection pool logs)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
 # Configure logging level to DEBUG for our modules
 logging.basicConfig(
@@ -294,6 +303,88 @@ def _get_all_workflow_states() -> dict:
     return _read_json(WORKFLOW_STATE_PATH, {})
 
 
+# AI Server Helper Functions
+AI_API_BASE_URL = os.getenv('AI_API_BASE_URL', 'http://localhost:8001')
+
+
+def _generate_embedding(text: str) -> Optional[List[float]]:
+    """
+    Generate embedding for text using brousla-app-server API.
+    
+    Args:
+        text: Text to generate embedding for
+        
+    Returns:
+        Embedding vector as list of floats, or None on error
+    """
+    try:
+        api_url = f"{AI_API_BASE_URL}/api/embeddings"
+        response = requests.post(
+            api_url,
+            json={"text": text},
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get("embedding")
+    except Exception as e:
+        logger.warning(f"Failed to generate embedding: {str(e)}")
+        return None
+
+
+def _generate_prompt_summary(prompts: List[str], concept: str) -> Optional[str]:
+    """
+    Generate summary of prompts using brousla-app-server API.
+    
+    Args:
+        prompts: List of prompts to summarize
+        concept: The concept for the prompts
+        
+    Returns:
+        Summary string, or None on error
+    """
+    try:
+        api_url = f"{AI_API_BASE_URL}/api/summarize-prompts"
+        response = requests.post(
+            api_url,
+            json={"prompts": prompts, "concept": concept},
+            timeout=30
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get("summary")
+    except Exception as e:
+        logger.warning(f"Failed to generate prompt summary: {str(e)}")
+        return None
+
+
+def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """
+    Calculate cosine similarity between two vectors.
+    
+    Args:
+        vec1: First vector
+        vec2: Second vector
+        
+    Returns:
+        Cosine similarity value between -1 and 1
+    """
+    if len(vec1) != len(vec2):
+        raise ValueError("Vectors must have the same length")
+    
+    # Calculate dot product
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    
+    # Calculate magnitudes
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(a * a for a in vec2))
+    
+    if magnitude1 == 0 or magnitude2 == 0:
+        return 0.0
+    
+    return dot_product / (magnitude1 * magnitude2)
+
+
 # Prompt History Management Functions
 def _get_prompt_history(workflow_id: str) -> list:
     """Get prompt history for a specific workflow"""
@@ -308,6 +399,14 @@ def _save_prompt_history(workflow_id: str, prompts: list, concept: str) -> None:
     if workflow_id not in history:
         history[workflow_id] = []
     
+    # Generate summary and embedding
+    summary = _generate_prompt_summary(prompts, concept)
+    embedding = None
+    if summary:
+        # Generate embedding for concept + summary combined
+        embedding_text = f"{concept}\n\n{summary}"
+        embedding = _generate_embedding(embedding_text)
+    
     # Create new entry
     entry = {
         "timestamp": datetime.utcnow().isoformat() + 'Z',
@@ -315,18 +414,93 @@ def _save_prompt_history(workflow_id: str, prompts: list, concept: str) -> None:
         "prompts": prompts
     }
     
+    # Add optional fields if available
+    if summary:
+        entry["summary"] = summary
+    if embedding:
+        entry["embedding"] = embedding
+    
     # Add to history (most recent first)
     history[workflow_id].insert(0, entry)
     
-    # Keep only last 20 entries per workflow
-    if len(history[workflow_id]) > 20:
-        history[workflow_id] = history[workflow_id][:20]
+    # Keep only last 10 entries per workflow (reduced from 20)
+    if len(history[workflow_id]) > 10:
+        history[workflow_id] = history[workflow_id][:10]
     
     _write_json(PROMPT_HISTORY_PATH, history)
 
 
+def _get_relevant_prompts(workflow_id: str, concept: str, limit: int = 5) -> tuple:
+    """
+    Get relevant prompts using embeddings-based similarity search.
+    
+    Args:
+        workflow_id: Workflow ID to get prompts for
+        concept: Current concept to find similar prompts for
+        limit: Maximum number of prompts to return (default: 5)
+        
+    Returns:
+        Tuple of (prompts_list, summaries_list) where:
+        - prompts_list: List of relevant prompts
+        - summaries_list: List of summaries for those prompts (may be shorter if some entries lack summaries)
+    """
+    history = _get_prompt_history(workflow_id)
+    
+    if not history:
+        return ([], [])
+    
+    # Generate embedding for current concept
+    concept_embedding = _generate_embedding(concept)
+    
+    # If embedding generation failed, fallback to recent prompts
+    if not concept_embedding:
+        logger.warning("Failed to generate concept embedding, falling back to recent prompts")
+        all_prompts = []
+        summaries = []
+        for entry in history[:limit]:
+            if isinstance(entry, dict) and "prompts" in entry:
+                all_prompts.extend(entry["prompts"])
+                if "summary" in entry:
+                    summaries.append(entry["summary"])
+        return (all_prompts, summaries)
+    
+    # Calculate similarity for each entry with embedding
+    entries_with_similarity = []
+    for entry in history:
+        if isinstance(entry, dict) and "prompts" in entry and "embedding" in entry:
+            try:
+                similarity = _cosine_similarity(concept_embedding, entry["embedding"])
+                entries_with_similarity.append((similarity, entry))
+            except Exception as e:
+                logger.warning(f"Failed to calculate similarity for entry: {str(e)}")
+                # Include entry with low similarity as fallback
+                entries_with_similarity.append((0.0, entry))
+        elif isinstance(entry, dict) and "prompts" in entry:
+            # Entry without embedding - include with low priority
+            entries_with_similarity.append((0.0, entry))
+    
+    # Sort by similarity (descending)
+    entries_with_similarity.sort(key=lambda x: x[0], reverse=True)
+    
+    # Get top entries and flatten prompts
+    all_prompts = []
+    summaries = []
+    for similarity, entry in entries_with_similarity[:limit]:
+        if "prompts" in entry:
+            all_prompts.extend(entry["prompts"])
+        if "summary" in entry:
+            summaries.append(entry["summary"])
+    
+    return (all_prompts, summaries)
+
+
 def _get_recent_prompts(workflow_id: str, limit: int = 20) -> list:
-    """Get recent prompts (flattened list) from history for a workflow"""
+    """
+    Get recent prompts (flattened list) from history for a workflow.
+    
+    DEPRECATED: Use _get_relevant_prompts() instead for better relevance.
+    Kept for backward compatibility.
+    """
     history = _get_prompt_history(workflow_id)
     
     # Flatten all prompts from history entries
@@ -1229,13 +1403,7 @@ def activate_workflow(workflow_id: str):
                 "error": "Cannot activate workflow that is currently running"
             }
         
-        # Set workflow to active and clear nextExecutionTime to trigger immediate execution
-        _update_workflow_state(workflow_id, {
-            "isActive": True,
-            "nextExecutionTime": None  # Set to None so scheduler executes immediately
-        })
-        
-        # Find workflow to trigger immediate execution
+        # Find workflow to get schedule
         workflows = _get_workflows_cache()
         workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
         
@@ -1244,6 +1412,14 @@ def activate_workflow(workflow_id: str):
                 "success": False,
                 "error": "Workflow not found"
             }
+        
+        # Set workflow to active, set isRunning=True immediately to prevent scheduler from executing,
+        # and set nextExecutionTime to None for first execution
+        _update_workflow_state(workflow_id, {
+            "isActive": True,
+            "isRunning": True,  # Set immediately to prevent scheduler from executing
+            "nextExecutionTime": None  # Set to None so first execution happens immediately
+        })
         
         # Get ComfyUI settings
         prefs = _read_json(PREFERENCES_PATH, {})
@@ -1261,7 +1437,8 @@ def activate_workflow(workflow_id: str):
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
                     output_folder=output_folder,
-                    update_state_callback=_update_workflow_state
+                    update_state_callback=_update_workflow_state,
+                    get_state_callback=_get_workflow_state
                 )
             except Exception as e:
                 print(f"Workflow activation execution error: {e}")
@@ -1296,6 +1473,55 @@ def deactivate_workflow(workflow_id: str):
             "success": True,
             "workflow_id": workflow_id,
             "message": "Workflow deactivated (current execution will finish)"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/workflows/{workflow_id}/cancel')
+def cancel_workflow(workflow_id: str):
+    """Cancel a currently running workflow execution"""
+    try:
+        state = _get_workflow_state(workflow_id)
+        
+        if not state.get('isRunning', False):
+            return {
+                "success": False,
+                "error": "Workflow is not currently running"
+            }
+        
+        # Calculate next execution time based on schedule to prevent immediate re-execution
+        workflows = _get_workflows_cache()
+        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+        schedule_minutes = workflow.get('schedule', 60) if workflow else 60
+        
+        from datetime import timedelta
+        next_execution = (datetime.utcnow() + timedelta(minutes=schedule_minutes)).isoformat() + 'Z'
+        
+        # Set cancellation flag, stop running, and set next execution time
+        _update_workflow_state(workflow_id, {
+            "isRunning": False,
+            "cancelled": True,
+            "nextExecutionTime": next_execution  # Prevent immediate re-execution
+        })
+        
+        # Interrupt ComfyUI execution
+        try:
+            prefs = _read_json(PREFERENCES_PATH, {})
+            comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
+            client = ComfyUIClient(comfyui_url)
+            client.interrupt()
+        except Exception as e:
+            # Log but don't fail - the state is already updated
+            logger.warning(f"Failed to interrupt ComfyUI: {str(e)}")
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "message": "Workflow execution cancelled"
         }
     except Exception as e:
         return {

@@ -101,12 +101,14 @@ export default function ConfirmationModal({
           
           {/* Actions */}
           <div className="flex items-center justify-end gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded-lg font-medium transition-colors"
-            >
-              {cancelText}
-            </button>
+            {cancelText && (
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800 rounded-lg font-medium transition-colors"
+              >
+                {cancelText}
+              </button>
+            )}
             <button
               onClick={() => {
                 onConfirm()

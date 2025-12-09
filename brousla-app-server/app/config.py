@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     
+    # Email Configuration (Resend)
+    resend_api_key: str
+    app_base_url: str = "http://localhost:5173"  # Frontend URL for confirmation links
+    email_from_address: str
+    email_from_name: str = "Brousla App"
+    
     class Config:
         env_file = str(_ENV_FILE)
         env_file_encoding = "utf-8"

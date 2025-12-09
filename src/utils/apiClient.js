@@ -61,9 +61,9 @@ export async function login(credentials) {
 }
 
 /**
- * Register new user and get JWT token
- * @param {Object} data - Registration data (email, username, password, etc.)
- * @returns {Promise<{token: string}>}
+ * Register new user (does not return token - email confirmation required)
+ * @param {Object} data - Registration data (email, password)
+ * @returns {Promise<{message: string}>}
  */
 export async function register(data) {
   const requestBody = JSON.stringify(data)
@@ -112,6 +112,84 @@ export async function register(data) {
   }
 
   const result = JSON.parse(responseText)
-  return { token: result.access_token || result.token }
+  return { message: result.message }
+}
+
+/**
+ * Confirm email address using verification token
+ * @param {string} token - Email verification token
+ * @returns {Promise<{message: string}>}
+ */
+export async function confirmEmail(token) {
+  const requestBody = JSON.stringify({ token })
+  const requestUrl = `${BASE_API_URL}/auth/confirm-email`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: requestBody,
+  })
+
+  const responseText = await response.text()
+  let errorData = null
+  
+  try {
+    errorData = JSON.parse(responseText)
+  } catch (e) {
+    errorData = { detail: responseText, raw: responseText }
+  }
+
+  if (!response.ok) {
+    const errorMessage = errorData.detail || errorData.message || `Email confirmation failed: ${response.status}`
+    const error = new Error(errorMessage)
+    error.status = response.status
+    error.statusText = response.statusText
+    error.responseBody = errorData
+    throw error
+  }
+
+  const result = JSON.parse(responseText)
+  return { message: result.message }
+}
+
+/**
+ * Resend confirmation email
+ * @param {string} email - User email address
+ * @returns {Promise<{message: string}>}
+ */
+export async function resendConfirmationEmail(email) {
+  const requestBody = JSON.stringify({ email })
+  const requestUrl = `${BASE_API_URL}/auth/resend-confirmation`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: requestBody,
+  })
+
+  const responseText = await response.text()
+  let errorData = null
+  
+  try {
+    errorData = JSON.parse(responseText)
+  } catch (e) {
+    errorData = { detail: responseText, raw: responseText }
+  }
+
+  if (!response.ok) {
+    const errorMessage = errorData.detail || errorData.message || `Resend confirmation failed: ${response.status}`
+    const error = new Error(errorMessage)
+    error.status = response.status
+    error.statusText = response.statusText
+    error.responseBody = errorData
+    throw error
+  }
+
+  const result = JSON.parse(responseText)
+  return { message: result.message }
 }
 

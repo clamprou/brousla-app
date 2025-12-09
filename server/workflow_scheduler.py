@@ -84,29 +84,29 @@ class WorkflowScheduler:
                 # Get workflow state
                 state = self.get_workflow_state(workflow_id)
                 
-                # Skip if not active or already running
-                if not state.get('isActive', False) or state.get('isRunning', False):
+                # Skip if not active, already running, or cancelled
+                if not state.get('isActive', False) or state.get('isRunning', False) or state.get('cancelled', False):
                     continue
                 
                 # Check if it's time to execute
                 next_execution = state.get('nextExecutionTime')
                 
-                # If nextExecutionTime is None or in the past, execute now
+                # Only execute if nextExecutionTime is set and in the past
+                # If nextExecutionTime is None, it means the workflow was just activated
+                # and will be executed by the activation endpoint, not by the scheduler
                 should_execute = False
-                if next_execution is None:
-                    # First execution - execute immediately
-                    should_execute = True
-                else:
+                if next_execution is not None:
                     try:
                         next_execution_time = datetime.fromisoformat(next_execution.replace('Z', '+00:00'))
                         if current_time >= next_execution_time.replace(tzinfo=None):
                             should_execute = True
                     except (ValueError, AttributeError):
-                        # Invalid date format - execute now
-                        should_execute = True
+                        # Invalid date format - skip this execution, let it be handled by activation
+                        should_execute = False
+                # If nextExecutionTime is None, don't execute here - it's being handled by activation
                 
                 if should_execute:
-                    print(f"Executing workflow: {workflow_id} ({workflow.get('name', 'Unnamed')})")
+                    print(f"Executing scheduled workflow: {workflow_id} ({workflow.get('name', 'Unnamed')})")
                     self._execute_workflow_async(workflow, workflow_id)
             
             except Exception as e:
@@ -116,6 +116,10 @@ class WorkflowScheduler:
     
     def _execute_workflow_async(self, workflow: Dict, workflow_id: str):
         """Execute a workflow asynchronously in a separate thread"""
+        # Set isRunning immediately to prevent duplicate executions
+        # (execute_workflow will also set it, but this ensures it's set atomically)
+        self.update_workflow_state(workflow_id, {"isRunning": True})
+        
         def execute():
             try:
                 # Execute the workflow (callback handles ComfyUI settings internally)

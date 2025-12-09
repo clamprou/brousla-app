@@ -33,10 +33,9 @@ export function AuthProvider({ children }) {
   const register = async (data) => {
     try {
       const result = await apiRegister(data)
-      const newToken = result.token
-      setToken(newToken)
-      localStorage.setItem(AUTH_TOKEN_KEY, newToken)
-      return { success: true }
+      // Registration no longer returns a token - email confirmation required
+      // Do NOT set token or auto-login
+      return { success: true, message: result.message }
     } catch (error) {
       return { success: false, error: error.message }
     }
