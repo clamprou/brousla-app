@@ -52,6 +52,12 @@
   },
   "build": {
     "appId": "com.brousla.app",
+    "protocols": [
+      {
+        "name": "Brousla App",
+        "schemes": ["brousla"]
+      }
+    ],
     "files": [
       "dist/**",
       "electron/**",

@@ -1,6 +1,7 @@
 """Pydantic models for request/response validation."""
 from typing import List, Optional, Literal
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+import re
 
 
 # Auth Models
@@ -8,6 +9,21 @@ class UserRegister(BaseModel):
     """User registration request model."""
     email: EmailStr
     password: str
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        """Validate password meets security requirements."""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        
+        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>\/?]', v):
+            raise ValueError('Password must contain at least one special character')
+        
+        return v
 
 
 class UserLogin(BaseModel):

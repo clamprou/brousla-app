@@ -88,6 +88,85 @@ function stopPython() {
   }
 }
 
+// Register custom protocol handler for deep links
+const PROTOCOL_NAME = 'brousla'
+
+// Register the protocol (must be called before app is ready)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL_NAME, process.execPath, [path.resolve(process.argv[1])])
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL_NAME)
+}
+
+// Handle protocol URLs (Windows - when app is already running)
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, focus our window instead
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+    
+    // Check for protocol URL in command line (Windows)
+    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL_NAME}://`))
+    if (url) {
+      handleProtocolUrl(url)
+    }
+  })
+  
+  // Handle protocol URL when app is launched from protocol (Windows)
+  // Check command line arguments for protocol URL
+  const protocolUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL_NAME}://`))
+  if (protocolUrl) {
+    // Store it to handle after app is ready
+    process.env.PROTOCOL_URL = protocolUrl
+  }
+}
+
+function handleProtocolUrl(url) {
+  if (!url || !url.startsWith(`${PROTOCOL_NAME}://`)) return
+  
+  // Parse the URL manually (URL might not be available in all Node contexts)
+  const urlWithoutProtocol = url.replace(`${PROTOCOL_NAME}://`, '')
+  const [pathPart, queryPart] = urlWithoutProtocol.split('?')
+  const params = new URLSearchParams(queryPart || '')
+  
+  // If it's an email confirmation, navigate to that page
+  if (pathPart === 'email-confirmation' || params.has('status') || params.has('token')) {
+    // Ensure window is created and focused
+    if (!mainWindow) {
+      createWindow()
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+    
+    // Navigate to email confirmation page with the params
+    const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
+    const queryString = queryPart ? `?${queryPart}` : ''
+    const targetUrl = `http://localhost:${devServerPort}/email-confirmation${queryString}`
+    
+    // Small delay to ensure window is ready
+    setTimeout(() => {
+      if (mainWindow) {
+        if (getIsDev()) {
+          mainWindow.loadURL(targetUrl)
+        } else {
+          // In production, navigate to the page
+          mainWindow.webContents.executeJavaScript(`
+            window.location.href = '${targetUrl}';
+          `)
+        }
+      }
+    }, 100)
+  }
+}
+
 app.whenReady().then(() => {
   // Only start Python server in production (in dev, it's started by dev:backend)
   if (!getIsDev()) {
@@ -101,6 +180,20 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+  
+  // Handle protocol URL on macOS (when app launches from protocol)
+  if (process.platform === 'darwin') {
+    app.on('open-url', (event, url) => {
+      event.preventDefault()
+      handleProtocolUrl(url)
+    })
+  }
+  
+  // Handle protocol URL stored from command line (Windows)
+  if (process.env.PROTOCOL_URL) {
+    handleProtocolUrl(process.env.PROTOCOL_URL)
+    delete process.env.PROTOCOL_URL
+  }
 })
 
 app.on('window-all-closed', () => {

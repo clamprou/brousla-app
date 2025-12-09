@@ -2,6 +2,28 @@ import React, { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { AlertCircle, Loader2, LogIn, UserPlus, CheckCircle } from 'lucide-react'
 
+// Password validation function
+const validatePassword = (password) => {
+  const errors = []
+  
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long')
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter')
+  }
+  
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push('Password must contain at least one special character')
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
 export default function LoginForm({ onSuccess }) {
   const { login, register } = useAuth()
   const [isRegisterMode, setIsRegisterMode] = useState(false)
@@ -9,9 +31,20 @@ export default function LoginForm({ onSuccess }) {
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [error, setError] = useState(null)
+  const [passwordErrors, setPasswordErrors] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [registrationSuccess, setRegistrationSuccess] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState('')
+
+  // Check if all registration requirements are met
+  const isRegistrationValid = () => {
+    if (!isRegisterMode) return true
+    
+    const passwordValidation = validatePassword(password)
+    const passwordsMatch = password === passwordConfirmation && passwordConfirmation.length > 0
+    
+    return passwordValidation.isValid && passwordsMatch
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -22,12 +55,25 @@ export default function LoginForm({ onSuccess }) {
     try {
       let result
       if (isRegisterMode) {
-        // Validate password confirmation
-        if (password !== passwordConfirmation) {
-          setError('Passwords do not match')
+        // Validate password strength
+        const passwordValidation = validatePassword(password)
+        if (!passwordValidation.isValid) {
+          setPasswordErrors(passwordValidation.errors)
+          setError(passwordValidation.errors.join('\n'))
           setIsLoading(false)
           return
         }
+        
+        // Validate password confirmation
+        if (password !== passwordConfirmation) {
+          setError('Passwords do not match')
+          setPasswordErrors([])
+          setIsLoading(false)
+          return
+        }
+        
+        // Clear password errors if validation passes
+        setPasswordErrors([])
         
         // Server expects email and password for registration
         result = await register({
@@ -139,11 +185,41 @@ export default function LoginForm({ onSuccess }) {
             id="password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              // Clear errors when user starts typing
+              if (passwordErrors.length > 0) {
+                setPasswordErrors([])
+                setError(null)
+              }
+            }}
             required
-            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+            className={`w-full px-4 py-2 bg-gray-800 border rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-transparent ${
+              passwordErrors.length > 0 && isRegisterMode
+                ? 'border-red-600 focus:ring-red-600'
+                : 'border-gray-700 focus:ring-blue-600'
+            }`}
             placeholder="••••••••"
           />
+          {isRegisterMode && (password || passwordConfirmation) && (
+            <div className="mt-1 text-xs text-gray-400">
+              <p>Password must:</p>
+              <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <li className={password.length >= 8 ? 'text-green-400' : ''}>
+                  Be at least 8 characters long
+                </li>
+                <li className={/[A-Z]/.test(password) ? 'text-green-400' : ''}>
+                  Contain at least one uppercase letter
+                </li>
+                <li className={/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) ? 'text-green-400' : ''}>
+                  Contain at least one special character
+                </li>
+                <li className={password === passwordConfirmation && passwordConfirmation.length > 0 && password.length > 0 ? 'text-green-400' : ''}>
+                  Passwords should be the same
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
 
         {isRegisterMode && (
@@ -155,9 +231,19 @@ export default function LoginForm({ onSuccess }) {
               id="passwordConfirmation"
               type="password"
               value={passwordConfirmation}
-              onChange={(e) => setPasswordConfirmation(e.target.value)}
+              onChange={(e) => {
+                setPasswordConfirmation(e.target.value)
+                // Clear errors when user starts typing
+                if (error && error.includes('Passwords do not match')) {
+                  setError(null)
+                }
+              }}
               required
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+              className={`w-full px-4 py-2 bg-gray-800 border rounded-lg text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:border-transparent ${
+                passwordConfirmation && password !== passwordConfirmation
+                  ? 'border-red-600 focus:ring-red-600'
+                  : 'border-gray-700 focus:ring-blue-600'
+              }`}
               placeholder="••••••••"
             />
           </div>
@@ -191,8 +277,8 @@ export default function LoginForm({ onSuccess }) {
 
         <button
           type="submit"
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 text-gray-200 rounded-lg transition-colors font-medium"
+          disabled={isLoading || (isRegisterMode && !isRegistrationValid())}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-gray-200 rounded-lg transition-colors font-medium"
         >
           {isLoading ? (
             <>
@@ -222,6 +308,7 @@ export default function LoginForm({ onSuccess }) {
             onClick={() => {
               setIsRegisterMode(!isRegisterMode)
               setError(null)
+              setPasswordErrors([])
               setRegistrationSuccess(false)
               setPasswordConfirmation('')
               setRegisteredEmail('')

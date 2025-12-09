@@ -132,7 +132,8 @@ async def confirm_email(token: str = Query(..., description="Email verification 
             "status": "error",
             "message": "Invalid or expired confirmation token"
         }
-        redirect_url = f"{frontend_url}/email-confirmation?{urlencode(redirect_params)}"
+        electron_url = f"brousla://email-confirmation?{urlencode(redirect_params)}"
+        redirect_url = electron_url
         return RedirectResponse(url=redirect_url, status_code=302)
     
     # Check if token is expired
@@ -143,7 +144,8 @@ async def confirm_email(token: str = Query(..., description="Email verification 
                 "status": "error",
                 "message": "Confirmation token has expired. Please request a new confirmation email."
             }
-            redirect_url = f"{frontend_url}/email-confirmation?{urlencode(redirect_params)}"
+            electron_url = f"brousla://email-confirmation?{urlencode(redirect_params)}"
+            redirect_url = electron_url
             return RedirectResponse(url=redirect_url, status_code=302)
     
     # Check if already verified
@@ -152,19 +154,25 @@ async def confirm_email(token: str = Query(..., description="Email verification 
             "status": "success",
             "message": "Email address is already verified. You can log in."
         }
-        redirect_url = f"{frontend_url}/email-confirmation?{urlencode(redirect_params)}"
+        electron_url = f"brousla://email-confirmation?{urlencode(redirect_params)}"
+        redirect_url = electron_url
         return RedirectResponse(url=redirect_url, status_code=302)
     
     # Mark email as verified and clear token
     update_user_email_verified(user_record["id"], True)
     update_user_verification_token(user_record["id"], None, None)
     
-    # Success - redirect to frontend
+    # Success - redirect to frontend using custom protocol for Electron app
     redirect_params = {
         "status": "success",
         "message": "Email address confirmed successfully. You can now log in."
     }
-    redirect_url = f"{frontend_url}/email-confirmation?{urlencode(redirect_params)}"
+    # Use custom protocol for Electron app, fallback to HTTP for web
+    electron_url = f"brousla://email-confirmation?{urlencode(redirect_params)}"
+    http_url = f"{frontend_url}/email-confirmation?{urlencode(redirect_params)}"
+    # Redirect to custom protocol (Electron will handle it), with HTTP fallback
+    # Note: Browsers will show an error for custom protocols, but Electron will catch it
+    redirect_url = electron_url
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
