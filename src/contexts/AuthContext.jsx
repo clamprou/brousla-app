@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { login as apiLogin, register as apiRegister } from '../utils/apiClient.js'
+import { login as apiLogin, register as apiRegister, handleGoogleOAuthCallback } from '../utils/apiClient.js'
 
 const AuthContext = createContext(null)
 
@@ -41,6 +41,18 @@ export function AuthProvider({ children }) {
     }
   }
 
+  const loginWithGoogle = async (callbackUrl) => {
+    try {
+      const result = await handleGoogleOAuthCallback(callbackUrl)
+      const newToken = result.token
+      setToken(newToken)
+      localStorage.setItem(AUTH_TOKEN_KEY, newToken)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+
   const logout = () => {
     setToken(null)
     localStorage.removeItem(AUTH_TOKEN_KEY)
@@ -54,6 +66,7 @@ export function AuthProvider({ children }) {
     isLoading,
     login,
     register,
+    loginWithGoogle,
     logout,
   }
 

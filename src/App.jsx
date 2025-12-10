@@ -7,6 +7,7 @@ import TextToVideo from './pages/TextToVideo.jsx'
 import Settings from './pages/Settings.jsx'
 import Profile from './pages/Profile.jsx'
 import EmailConfirmation from './pages/EmailConfirmation.jsx'
+import GoogleOAuthCallback from './pages/GoogleOAuthCallback.jsx'
 import { ImageIcon, Film, Type, Settings as SettingsIcon, Bot } from 'lucide-react'
 import AIWorkflows from './pages/AIWorkflows.jsx'
 import CreateWorkflow from './pages/CreateWorkflow.jsx'
@@ -27,7 +28,33 @@ export default function App() {
   // Check if we're on email confirmation page
   const isEmailConfirmation = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
-    return params.has('token')
+    return window.location.pathname === '/email-confirmation' || params.has('token')
+  }, [])
+
+  // Check if we're on Google OAuth callback page
+  const [isGoogleOAuthCallback, setIsGoogleOAuthCallback] = useState(() => {
+    return window.location.pathname === '/google-oauth-callback' || 
+           window.location.href.includes('google-oauth-callback')
+  })
+
+  // Update OAuth callback detection when URL changes
+  useEffect(() => {
+    const checkCallback = () => {
+      const isCallback = window.location.pathname === '/google-oauth-callback' || 
+                        window.location.href.includes('google-oauth-callback')
+      setIsGoogleOAuthCallback(isCallback)
+    }
+    
+    checkCallback()
+    // Also listen for popstate events (back/forward navigation)
+    window.addEventListener('popstate', checkCallback)
+    // Check periodically in case URL changes without events
+    const interval = setInterval(checkCallback, 100)
+    
+    return () => {
+      window.removeEventListener('popstate', checkCallback)
+      clearInterval(interval)
+    }
   }, [])
 
   // Global navigation event to allow pages to trigger navigation without props drilling
@@ -155,6 +182,15 @@ export default function App() {
     return (
       <AuthProvider>
         <EmailConfirmation />
+      </AuthProvider>
+    )
+  }
+
+  // If Google OAuth callback, show GoogleOAuthCallback page (outside ProtectedRoute)
+  if (isGoogleOAuthCallback) {
+    return (
+      <AuthProvider>
+        <GoogleOAuthCallback />
       </AuthProvider>
     )
   }

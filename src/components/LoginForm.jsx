@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { AlertCircle, Loader2, LogIn, UserPlus, CheckCircle } from 'lucide-react'
+import { initiateGoogleOAuth, checkGoogleOAuthStatus } from '../utils/apiClient.js'
 
 // Password validation function
 const validatePassword = (password) => {
@@ -25,7 +26,7 @@ const validatePassword = (password) => {
 }
 
 export default function LoginForm({ onSuccess }) {
-  const { login, register } = useAuth()
+  const { login, register, loginWithGoogle, isAuthenticated } = useAuth()
   const [isRegisterMode, setIsRegisterMode] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -33,8 +34,60 @@ export default function LoginForm({ onSuccess }) {
   const [error, setError] = useState(null)
   const [passwordErrors, setPasswordErrors] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [registrationSuccess, setRegistrationSuccess] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState('')
+
+  // Clear Google loading state when authentication succeeds
+  useEffect(() => {
+    if (isAuthenticated) {
+      setIsGoogleLoading(false)
+      if (onSuccess) {
+        onSuccess()
+      }
+    }
+  }, [isAuthenticated, onSuccess])
+  
+  // Also clear loading state when component mounts if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      setIsGoogleLoading(false)
+    }
+  }, [])
+
+  // Listen for OAuth callback events (use capture phase to catch events early)
+  useEffect(() => {
+    const handleOAuthCallback = (event) => {
+      console.log('LoginForm received OAuth callback event:', event.detail)
+      if (event.detail && event.detail.type === 'google-oauth-success') {
+        console.log('OAuth success, clearing loading state')
+        setIsGoogleLoading(false)
+      } else if (event.detail && event.detail.type === 'google-oauth-error') {
+        console.log('OAuth error, clearing loading state')
+        setIsGoogleLoading(false)
+        setError(event.detail.message || 'Google sign-in failed')
+      }
+    }
+
+    // Use capture phase to ensure we catch the event
+    window.addEventListener('google-oauth-callback', handleOAuthCallback, true)
+    return () => {
+      window.removeEventListener('google-oauth-callback', handleOAuthCallback, true)
+    }
+  }, [])
+
+  // Clear loading state if we navigate away from login (e.g., to OAuth callback page)
+  useEffect(() => {
+    const checkLocation = () => {
+      if (window.location.pathname === '/google-oauth-callback') {
+        setIsGoogleLoading(false)
+      }
+    }
+    
+    checkLocation()
+    const interval = setInterval(checkLocation, 500)
+    return () => clearInterval(interval)
+  }, [])
 
   // Check if all registration requirements are met
   const isRegistrationValid = () => {
@@ -145,6 +198,97 @@ export default function LoginForm({ onSuccess }) {
       setError(errorMessage)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setError(null)
+    setIsGoogleLoading(true)
+    
+    try {
+      // Get the OAuth URL and state from backend
+      const result = await initiateGoogleOAuth()
+      const { auth_url, state } = result
+      
+      if (!state) {
+        throw new Error('No state token received from server')
+      }
+      
+      // Open the URL in external browser using Electron's shell.openExternal
+      if (window.electronAPI && window.electronAPI.openExternal) {
+        await window.electronAPI.openExternal(auth_url)
+        
+        // Start polling for OAuth completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResult = await checkGoogleOAuthStatus(state)
+            console.log('OAuth status check:', statusResult)
+            
+            if (statusResult.status === 'success' && statusResult.token) {
+              // Success! Complete the login
+              clearInterval(pollInterval)
+              const loginResult = await loginWithGoogle(`brousla://google-oauth-callback?status=success&token=${encodeURIComponent(statusResult.token)}`)
+              
+              if (loginResult.success) {
+                setIsGoogleLoading(false)
+                // Notify other components
+                window.dispatchEvent(new CustomEvent('google-oauth-callback', {
+                  detail: { type: 'google-oauth-success', token: statusResult.token }
+                }))
+                if (onSuccess) {
+                  onSuccess()
+                }
+              } else {
+                setIsGoogleLoading(false)
+                setError(loginResult.error || 'Failed to complete Google sign-in')
+                window.dispatchEvent(new CustomEvent('google-oauth-callback', {
+                  detail: { type: 'google-oauth-error', message: loginResult.error }
+                }))
+              }
+            } else if (statusResult.status === 'error') {
+              // Error occurred
+              clearInterval(pollInterval)
+              setIsGoogleLoading(false)
+              setError(statusResult.message || 'Google sign-in failed')
+              window.dispatchEvent(new CustomEvent('google-oauth-callback', {
+                detail: { type: 'google-oauth-error', message: statusResult.message }
+              }))
+            }
+            // If status is 'pending', continue polling
+          } catch (pollError) {
+            console.error('Error polling OAuth status:', pollError)
+            // Don't stop polling on network errors, but stop after max attempts
+          }
+        }, 2000) // Poll every 2 seconds
+        
+        // Set a timeout to stop polling after 5 minutes
+        const maxPollTime = 300000 // 5 minutes
+        const timeoutId = setTimeout(() => {
+          clearInterval(pollInterval)
+          setIsGoogleLoading((prev) => {
+            // Only clear if still loading and not authenticated
+            if (prev && !isAuthenticated) {
+              setError('Google sign-in timed out. Please try again.')
+              return false
+            }
+            return prev
+          })
+        }, maxPollTime)
+        
+        // Cleanup function
+        return () => {
+          clearInterval(pollInterval)
+          clearTimeout(timeoutId)
+        }
+      } else {
+        // Fallback for non-Electron environments (web)
+        window.open(auth_url, '_blank')
+        setIsGoogleLoading(false)
+      }
+    } catch (err) {
+      console.error('Google OAuth initiation error:', err)
+      setError(err.message || 'Failed to initiate Google sign-in')
+      setIsGoogleLoading(false)
     }
   }
 
@@ -298,6 +442,51 @@ export default function LoginForm({ onSuccess }) {
                   Sign In
                 </>
               )}
+            </>
+          )}
+        </button>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-700"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-gray-900 text-gray-400">Or continue with</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={isGoogleLoading || isLoading}
+          className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white hover:bg-gray-100 disabled:bg-gray-300 disabled:cursor-not-allowed text-gray-900 rounded-lg transition-colors font-medium border border-gray-300"
+        >
+          {isGoogleLoading ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Connecting to Google...</span>
+            </>
+          ) : (
+            <>
+              <svg className="h-5 w-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
+              </svg>
+              <span>Sign in with Google</span>
             </>
           )}
         </button>

@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
-  validateComfyUIFolder: (folderPath) => ipcRenderer.invoke('comfyui:validateFolder', folderPath)
+  validateComfyUIFolder: (folderPath) => ipcRenderer.invoke('comfyui:validateFolder', folderPath),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 })
 
 

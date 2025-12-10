@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     email_from_address: str
     email_from_name: str = "Brousla App"
     
+    # Google OAuth Configuration
+    google_oauth_client_id: str
+    google_oauth_client_secret: str
+    # Note: Google requires HTTP/HTTPS redirect URIs, not custom protocols
+    # We use localhost HTTP, then redirect to custom protocol for Electron
+    # The redirect URI will be computed as http://localhost:{port}/auth/google/callback
+    
     class Config:
         env_file = str(_ENV_FILE)
         env_file_encoding = "utf-8"

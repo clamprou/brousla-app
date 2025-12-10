@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron')
 const path = require('path')
 const { existsSync, statSync } = require('fs')
 const { spawn } = require('child_process')
@@ -136,20 +136,40 @@ function handleProtocolUrl(url) {
   const [pathPart, queryPart] = urlWithoutProtocol.split('?')
   const params = new URLSearchParams(queryPart || '')
   
-  // If it's an email confirmation, navigate to that page
-  if (pathPart === 'email-confirmation' || params.has('status') || params.has('token')) {
-    // Ensure window is created and focused
-    if (!mainWindow) {
-      createWindow()
-    } else {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
-    
+  // Ensure window is created and focused
+  if (!mainWindow) {
+    createWindow()
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+  
+  // Handle email confirmation
+  if (pathPart === 'email-confirmation') {
     // Navigate to email confirmation page with the params
     const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
     const queryString = queryPart ? `?${queryPart}` : ''
     const targetUrl = `http://localhost:${devServerPort}/email-confirmation${queryString}`
+    
+    // Small delay to ensure window is ready
+    setTimeout(() => {
+      if (mainWindow) {
+        if (getIsDev()) {
+          mainWindow.loadURL(targetUrl)
+        } else {
+          // In production, navigate to the page
+          mainWindow.webContents.executeJavaScript(`
+            window.location.href = '${targetUrl}';
+          `)
+        }
+      }
+    }, 100)
+  }
+  // Handle Google OAuth callback
+  else if (pathPart === 'google-oauth-callback') {
+    const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
+    const queryString = queryPart ? `?${queryPart}` : ''
+    const targetUrl = `http://localhost:${devServerPort}/google-oauth-callback${queryString}`
     
     // Small delay to ensure window is ready
     setTimeout(() => {
@@ -232,6 +252,18 @@ ipcMain.handle('dialog:selectFolder', async () => {
     buttonLabel: 'Select Folder'
   })
   return result
+})
+
+// ComfyUI folder validation handler
+// Shell handlers
+ipcMain.handle('shell:openExternal', async (event, url) => {
+  try {
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    console.error('Error opening external URL:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 // ComfyUI folder validation handler
