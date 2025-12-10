@@ -6,12 +6,12 @@ Electron + React desktop application with dual Python FastAPI backend architectu
 
 This application uses a **two-server architecture**:
 
-1. **Authentication & AI Server** (`brousla-app-server/`) - Port 8001
+1. **Authentication & AI Server** (`api-server/`) - Port 8001
    - User authentication (JWT, register, login)
    - AI chat endpoints (OpenAI integration)
    - Rate limiting and security
 
-2. **ComfyUI Workflow Server** (`server/`) - Port 8000
+2. **ComfyUI Workflow Server** (`workflow-server/`) - Port 8000
    - ComfyUI workflow execution
    - Image and video generation
    - Workflow scheduling and management
@@ -42,15 +42,15 @@ npm install
 
 ```bash
 # ComfyUI Workflow Server
-pip install -r server/requirements.txt
+pip install -r workflow-server/requirements.txt
 
 # Authentication & AI Server
-pip install -r brousla-app-server/requirements.txt
+pip install -r api-server/requirements.txt
 ```
 
 3. **Configure Authentication Server:**
 
-Create `brousla-app-server/.env`:
+Create `api-server/.env`:
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
 JWT_SECRET=your-secret-key-change-this-in-production-min-32-chars
@@ -97,12 +97,12 @@ brousla-app/
 │   ├── contexts/         # React contexts (Auth)
 │   ├── config/           # Configuration
 │   └── utils/            # Utility functions
-├── server/               # ComfyUI Workflow Server (port 8000)
+├── workflow-server/      # ComfyUI Workflow Server (port 8000)
 │   ├── main.py           # FastAPI app for workflows
 │   ├── workflow_executor.py
 │   ├── comfyui_client.py
 │   └── data/             # Workflow data and preferences
-├── brousla-app-server/   # Authentication & AI Server (port 8001)
+├── api-server/           # Authentication & AI Server (port 8001)
 │   ├── app/
 │   │   ├── main.py       # FastAPI app entry point
 │   │   ├── routes_auth.py # Authentication routes
@@ -118,29 +118,29 @@ brousla-app/
 
 ### Authentication & AI Server (Port 8001)
 
-- **Location**: `brousla-app-server/`
+- **Location**: `api-server/`
 - **Purpose**: User authentication and AI chat
 - **Endpoints**:
   - `POST /auth/register` - User registration
   - `POST /auth/login` - User login (returns JWT)
   - `GET /auth/me` - Get current user info
   - `POST /api/chat` - AI chat (streaming/non-streaming)
-- **Documentation**: See `brousla-app-server/README.md`
+- **Documentation**: See `api-server/README.md`
 
 ### ComfyUI Workflow Server (Port 8000)
 
-- **Location**: `server/`
+- **Location**: `workflow-server/`
 - **Purpose**: ComfyUI workflow execution
 - **Endpoints**: Various workflow and ComfyUI management endpoints
-- **Data**: Stored in `server/data/`
+- **Data**: Stored in `workflow-server/data/`
 
 ## Important Notes
 
 - **Authentication is required** - Users must log in or register before accessing the application
-- **API Keys**: OpenAI API keys are stored only on the backend (`brousla-app-server/`)
+- **API Keys**: OpenAI API keys are stored only on the backend (`api-server/`)
 - **Client Security**: The client never directly calls OpenAI/RunPod APIs - all requests go through the backend servers
-- **Settings**: ComfyUI settings stored in `server/data/preferences.json`
-- **History**: Workflow history stored in `server/data/history.json`
+- **Settings**: ComfyUI settings stored in `workflow-server/data/preferences.json`
+- **History**: Workflow history stored in `workflow-server/data/history.json`
 
 ## Development Tips
 

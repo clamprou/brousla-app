@@ -8,8 +8,8 @@
     "dev": "cross-env VITE_DEV_SERVER_PORT=5173 concurrently \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:comfyui\" \"npm:dev:auth\"",
     "dev:renderer": "vite",
     "dev:electron": "wait-on tcp:5173 && electron .",
-    "dev:comfyui": "python ./server/main.py",
-    "dev:auth": "python ./brousla-app-server/run.py",
+    "dev:comfyui": "python ./workflow-server/main.py",
+    "dev:auth": "python ./api-server/run.py",
     "build": "npm run build:renderer && electron-builder -wml",
     "build:renderer": "vite build",
     "postinstall": "electron-builder install-app-deps",
@@ -61,15 +61,15 @@
     "files": [
       "dist/**",
       "electron/**",
-      "server/**",
+      "workflow-server/**",
       "assets/**",
       "models/**",
       "package.json"
     ],
     "extraResources": [
       {
-        "from": "server",
-        "to": "server",
+        "from": "workflow-server",
+        "to": "workflow-server",
         "filter": [
           "**/*"
         ]

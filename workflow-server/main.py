@@ -309,7 +309,7 @@ AI_API_BASE_URL = os.getenv('AI_API_BASE_URL', 'http://localhost:8001')
 
 def _generate_embedding(text: str) -> Optional[List[float]]:
     """
-    Generate embedding for text using brousla-app-server API.
+    Generate embedding for text using api-server API.
     
     Args:
         text: Text to generate embedding for
@@ -334,7 +334,7 @@ def _generate_embedding(text: str) -> Optional[List[float]]:
 
 def _generate_prompt_summary(prompts: List[str], concept: str) -> Optional[str]:
     """
-    Generate summary of prompts using brousla-app-server API.
+    Generate summary of prompts using api-server API.
     
     Args:
         prompts: List of prompts to summarize

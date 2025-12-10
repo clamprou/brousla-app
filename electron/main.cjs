@@ -76,7 +76,7 @@ function createWindow() {
 }
 
 function startPython() {
-  const serverPath = path.join(process.cwd(), 'server', 'main.py')
+  const serverPath = path.join(process.cwd(), 'workflow-server', 'main.py')
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
   pythonProcess = spawn(pythonCmd, [serverPath], { stdio: 'inherit' })
 }

@@ -67,5 +67,5 @@ The backend provides these new endpoints:
 
 - The application uses WebSocket connections to monitor ComfyUI execution progress
 - Workflows are dynamically modified to inject user prompts and inputs
-- Generated files are saved to the `server/outputs` directory
+- Generated files are saved to the `workflow-server/outputs` directory
 - The application handles both image and video generation workflows

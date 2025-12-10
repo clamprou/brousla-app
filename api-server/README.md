@@ -33,7 +33,7 @@ The client communicates with the backend via HTTP. The backend:
 
 1. Clone the repository and navigate to the project directory:
 ```bash
-cd brousla-app-server
+cd api-server
 ```
 
 2. Create a virtual environment:
@@ -227,7 +227,7 @@ curl -X POST "http://localhost:8001/api/chat" \
 ## Project Structure
 
 ```
-brousla-app-server/
+api-server/
 ├── app/
 │   ├── __init__.py
 │   ├── main.py              # FastAPI app entry point

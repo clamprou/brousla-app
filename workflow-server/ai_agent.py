@@ -1,7 +1,7 @@
 """
 AI Agent module for generating prompts for multi-clip workflows.
 
-Integrates with the AI LLM agent from brousla-app-server to generate diverse,
+Integrates with the AI LLM agent from api-server to generate diverse,
 contextual prompts for each clip based on the concept and number of clips.
 """
 import os
@@ -26,7 +26,7 @@ def generate_prompts(
     """
     Generate prompts for each clip based on the concept and number of clips.
     
-    This function calls the AI LLM agent from brousla-app-server to generate
+    This function calls the AI LLM agent from api-server to generate
     diverse, contextual prompts for each clip. If the API call fails, an error
     will be raised with details about what went wrong.
     
@@ -150,7 +150,7 @@ def generate_prompts(
     except requests.exceptions.ConnectionError as e:
         error_msg = (
             f"Failed to connect to AI agent at {AI_API_BASE_URL}. "
-            f"Please ensure the brousla-app-server is running and accessible. "
+            f"Please ensure the api-server is running and accessible. "
             f"Error: {str(e)}"
         )
         logger.error(error_msg)
