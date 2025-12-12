@@ -4,10 +4,12 @@ import { workflowManager } from '../utils/workflowManager.js'
 import ConfirmationModal from '../components/ConfirmationModal.jsx'
 import OutputFolderModal from '../components/OutputFolderModal.jsx'
 import { settingsManager } from '../utils/settingsManager.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const BACKEND_URL = 'http://127.0.0.1:8000'
 
 export default function AIWorkflows() {
+  const { userId, token } = useAuth()
   const [workflows, setWorkflows] = useState([])
   const [workflowStates, setWorkflowStates] = useState({})
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, workflowId: null, workflowName: '' })
@@ -20,8 +22,17 @@ export default function AIWorkflows() {
 
   // Load workflow states from backend
   const loadWorkflowStates = React.useCallback(async () => {
+    if (!userId) {
+      setWorkflowStates({})
+      return
+    }
+    
     try {
-      const response = await fetch(`${BACKEND_URL}/workflows/status`)
+      const response = await fetch(`${BACKEND_URL}/workflows/status`, {
+        headers: {
+          'X-User-Id': userId
+        }
+      })
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
@@ -31,7 +42,7 @@ export default function AIWorkflows() {
     } catch (error) {
       console.error('Error loading workflow states:', error)
     }
-  }, [])
+  }, [userId])
 
   // Check if output folder is set when component mounts
   useEffect(() => {
@@ -54,10 +65,32 @@ export default function AIWorkflows() {
     }
   }, [])
 
+  // Update workflowManager userId when it changes
+  useEffect(() => {
+    if (userId) {
+      // Set userId and load workflows from localStorage for this user
+      workflowManager.setUserId(userId)
+      // Force a reload to ensure workflows are loaded
+      const loadedWorkflows = workflowManager.getWorkflows()
+      if (loadedWorkflows.length > 0) {
+        setWorkflows(loadedWorkflows)
+      }
+    } else {
+      // Clear in-memory workflows when user logs out (but keep in localStorage)
+      workflowManager.clearWorkflows()
+      setWorkflows([])
+    }
+  }, [userId])
+
   // Sync workflows with backend and load states
   useEffect(() => {
+    if (!userId) {
+      setWorkflows([])
+      return
+    }
+
     const syncWorkflows = async () => {
-      // Get workflows from local storage
+      // Get workflows from local storage (already filtered by userId in getWorkflows)
       const localWorkflows = workflowManager.getWorkflows()
       setWorkflows(localWorkflows)
       
@@ -65,7 +98,10 @@ export default function AIWorkflows() {
       try {
         await fetch(`${BACKEND_URL}/workflows/sync`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Id': userId
+          },
           body: JSON.stringify(localWorkflows)
         })
       } catch (error) {
@@ -81,14 +117,19 @@ export default function AIWorkflows() {
     // Listen for workflow updates
     const handleWorkflowsUpdate = async (event) => {
       const updatedWorkflows = event.detail.workflows
-      setWorkflows(updatedWorkflows)
+      // Filter to only show workflows for current user
+      const userWorkflows = updatedWorkflows.filter(w => w.userId === userId)
+      setWorkflows(userWorkflows)
       
       // Sync with backend
       try {
         await fetch(`${BACKEND_URL}/workflows/sync`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedWorkflows)
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Id': userId
+          },
+          body: JSON.stringify(userWorkflows)
         })
         await loadWorkflowStates()
       } catch (error) {
@@ -105,15 +146,20 @@ export default function AIWorkflows() {
       window.removeEventListener('workflowsUpdated', handleWorkflowsUpdate)
       clearInterval(statePollInterval)
     }
-  }, [loadWorkflowStates])
+  }, [loadWorkflowStates, userId])
 
   // Handle activate/deactivate workflow
   const handleToggleWorkflow = async (workflowId, isCurrentlyActive) => {
+    if (!userId) return
+    
     setActivatingWorkflow(workflowId)
     try {
       const endpoint = isCurrentlyActive ? 'deactivate' : 'activate'
       const response = await fetch(`${BACKEND_URL}/workflows/${workflowId}/${endpoint}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'X-User-Id': userId
+        }
       })
       
       if (response.ok) {
@@ -144,12 +190,15 @@ export default function AIWorkflows() {
     const workflowId = cancelConfirmModal.workflowId
     setCancelConfirmModal({ isOpen: false, workflowId: null })
     
-    if (!workflowId) return
+    if (!workflowId || !userId) return
     
     setCancellingWorkflow(workflowId)
     try {
       const response = await fetch(`${BACKEND_URL}/workflows/${workflowId}/cancel`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'X-User-Id': userId
+        }
       })
       
       if (response.ok) {

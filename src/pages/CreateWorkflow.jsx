@@ -2,8 +2,10 @@ import React, { useState } from 'react'
 import { ArrowLeft, Save, Bot, HelpCircle, Settings as SettingsIcon, ChevronDown, ChevronRight } from 'lucide-react'
 import WorkflowFileUpload from '../components/WorkflowFileUpload.jsx'
 import { workflowManager } from '../utils/workflowManager.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function CreateWorkflow() {
+  const { userId } = useAuth()
   const [name, setName] = useState('')
   const [concept, setConcept] = useState('')
   const [numberOfClips, setNumberOfClips] = useState(1)
@@ -27,8 +29,17 @@ export default function CreateWorkflow() {
   const conceptTextareaRef = React.useRef(null)
 
 
+  // Ensure workflowManager has userId set
+  React.useEffect(() => {
+    if (userId) {
+      workflowManager.setUserId(userId)
+    }
+  }, [userId])
+
   // Load workflow data if editing or get workflow type from selection
   React.useEffect(() => {
+    if (!userId) return
+    
     // Reset any potential focus issues
     document.body.style.overflow = 'unset'
     

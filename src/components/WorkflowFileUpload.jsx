@@ -1,8 +1,10 @@
 import React from 'react'
 import { Upload, FileText, AlertCircle, Save, Trash2, Clock, X } from 'lucide-react'
 import { getStoredWorkflows, loadStoredWorkflow, deleteStoredWorkflow, markWorkflowUsed, saveWorkflow } from '../utils/workflowStorage.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI Workflow" }) {
+  const { userId } = useAuth()
   const fileInputRef = React.useRef(null)
   const [error, setError] = React.useState(null)
   const [isDragging, setIsDragging] = React.useState(false)
@@ -116,15 +118,21 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
     }
   }
 
-  // Load stored workflows on mount
+  // Load stored workflows on mount and when userId changes
   React.useEffect(() => {
-    loadStoredWorkflowsList()
-  }, [])
+    if (userId) {
+      loadStoredWorkflowsList()
+    } else {
+      setStoredWorkflows([])
+    }
+  }, [userId])
 
   const loadStoredWorkflowsList = async () => {
+    if (!userId) return
+    
     setIsLoadingStored(true)
     try {
-      const workflows = await getStoredWorkflows()
+      const workflows = await getStoredWorkflows(userId)
       setStoredWorkflows(workflows)
     } catch (error) {
       console.error('Error loading stored workflows:', error)
@@ -134,11 +142,13 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
   }
 
   const handleLoadStoredWorkflow = async (workflowId) => {
+    if (!userId) return
+    
     try {
-      const result = await loadStoredWorkflow(workflowId)
+      const result = await loadStoredWorkflow(workflowId, userId)
       if (result) {
         // Mark as used
-        await markWorkflowUsed(workflowId)
+        await markWorkflowUsed(workflowId, userId)
         
         // Set the workflow as current value
         const payload = {
@@ -161,12 +171,12 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
 
   const handleDeleteStoredWorkflow = async (workflowId, e) => {
     e.stopPropagation()
-    if (!confirm('Are you sure you want to delete this workflow?')) {
+    if (!userId || !confirm('Are you sure you want to delete this workflow?')) {
       return
     }
     
     try {
-      const success = await deleteStoredWorkflow(workflowId)
+      const success = await deleteStoredWorkflow(workflowId, userId)
       if (success) {
         await loadStoredWorkflowsList()
         // If the deleted workflow was currently selected, clear it
@@ -195,11 +205,16 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
       return
     }
 
+    if (!userId) {
+      setError('You must be logged in to save workflows')
+      return
+    }
+
     setIsSaving(true)
     setError(null)
 
     try {
-      const savedWorkflow = await saveWorkflow(saveName.trim(), saveDescription.trim(), value)
+      const savedWorkflow = await saveWorkflow(saveName.trim(), saveDescription.trim(), value, userId)
       if (savedWorkflow) {
         // Update the current value to mark it as saved
         onChange?.({

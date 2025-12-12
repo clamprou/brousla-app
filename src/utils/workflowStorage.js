@@ -2,12 +2,22 @@
 const BACKEND_URL = 'http://127.0.0.1:8000'
 
 /**
- * Get all stored workflows
+ * Get all stored workflows for the current user
+ * @param {string} userId - User ID
  * @returns {Promise<Array>} Array of workflow metadata objects
  */
-export async function getStoredWorkflows() {
+export async function getStoredWorkflows(userId) {
+  if (!userId) {
+    console.warn('getStoredWorkflows called without userId')
+    return []
+  }
+  
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows`)
+    const response = await fetch(`${BACKEND_URL}/stored-workflows`, {
+      headers: {
+        'X-User-Id': userId
+      }
+    })
     const data = await response.json()
     
     if (data.success) {
@@ -27,9 +37,15 @@ export async function getStoredWorkflows() {
  * @param {string} name - Workflow name
  * @param {string} description - Optional description
  * @param {Object} workflowFile - Workflow file object with json, fileName, etc.
+ * @param {string} userId - User ID
  * @returns {Promise<Object|null>} Saved workflow metadata or null on error
  */
-export async function saveWorkflow(name, description, workflowFile) {
+export async function saveWorkflow(name, description, workflowFile, userId) {
+  if (!userId) {
+    console.warn('saveWorkflow called without userId')
+    return null
+  }
+  
   try {
     const formData = new FormData()
     
@@ -41,6 +57,9 @@ export async function saveWorkflow(name, description, workflowFile) {
     
     const response = await fetch(`${BACKEND_URL}/stored-workflows`, {
       method: 'POST',
+      headers: {
+        'X-User-Id': userId
+      },
       body: formData
     })
     
@@ -61,11 +80,21 @@ export async function saveWorkflow(name, description, workflowFile) {
 /**
  * Load a stored workflow by ID
  * @param {string} workflowId - Workflow ID
+ * @param {string} userId - User ID
  * @returns {Promise<Object|null>} Workflow object with json and metadata, or null on error
  */
-export async function loadStoredWorkflow(workflowId) {
+export async function loadStoredWorkflow(workflowId, userId) {
+  if (!userId) {
+    console.warn('loadStoredWorkflow called without userId')
+    return null
+  }
+  
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`)
+    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
+      headers: {
+        'X-User-Id': userId
+      }
+    })
     const data = await response.json()
     
     if (data.success) {
@@ -86,12 +115,21 @@ export async function loadStoredWorkflow(workflowId) {
 /**
  * Delete a stored workflow
  * @param {string} workflowId - Workflow ID
+ * @param {string} userId - User ID
  * @returns {Promise<boolean>} True if successful, false otherwise
  */
-export async function deleteStoredWorkflow(workflowId) {
+export async function deleteStoredWorkflow(workflowId, userId) {
+  if (!userId) {
+    console.warn('deleteStoredWorkflow called without userId')
+    return false
+  }
+  
   try {
     const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: {
+        'X-User-Id': userId
+      }
     })
     
     const data = await response.json()
@@ -113,9 +151,15 @@ export async function deleteStoredWorkflow(workflowId) {
  * @param {string} workflowId - Workflow ID
  * @param {string} name - New name (optional)
  * @param {string} description - New description (optional)
+ * @param {string} userId - User ID
  * @returns {Promise<Object|null>} Updated workflow metadata or null on error
  */
-export async function updateWorkflowMetadata(workflowId, name, description) {
+export async function updateWorkflowMetadata(workflowId, name, description, userId) {
+  if (!userId) {
+    console.warn('updateWorkflowMetadata called without userId')
+    return null
+  }
+  
   try {
     const updates = {}
     if (name !== undefined) updates.name = name
@@ -124,7 +168,8 @@ export async function updateWorkflowMetadata(workflowId, name, description) {
     const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-User-Id': userId
       },
       body: JSON.stringify(updates)
     })
@@ -146,12 +191,21 @@ export async function updateWorkflowMetadata(workflowId, name, description) {
 /**
  * Mark a workflow as used (update lastUsed timestamp)
  * @param {string} workflowId - Workflow ID
+ * @param {string} userId - User ID
  * @returns {Promise<boolean>} True if successful, false otherwise
  */
-export async function markWorkflowUsed(workflowId) {
+export async function markWorkflowUsed(workflowId, userId) {
+  if (!userId) {
+    console.warn('markWorkflowUsed called without userId')
+    return false
+  }
+  
   try {
     const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}/use`, {
-      method: 'POST'
+      method: 'POST',
+      headers: {
+        'X-User-Id': userId
+      }
     })
     
     const data = await response.json()

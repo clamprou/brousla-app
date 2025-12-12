@@ -8,9 +8,9 @@ import traceback
 import logging
 import math
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-from fastapi import FastAPI, Query, UploadFile, File, Form, Body
+from fastapi import FastAPI, Query, UploadFile, File, Form, Body, Request
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -34,17 +34,42 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 WORKFLOWS_DIR = os.path.join(os.path.dirname(__file__), 'workflows')
 OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), 'outputs')
 STORED_WORKFLOWS_DIR = os.path.join(DATA_DIR, 'stored_workflows')
+STORED_WORKFLOWS_USERS_DIR = os.path.join(STORED_WORKFLOWS_DIR, 'users')
 
 PREFERENCES_PATH = os.path.join(DATA_DIR, 'preferences.json')
 HISTORY_PATH = os.path.join(DATA_DIR, 'history.json')
-WORKFLOW_STATE_PATH = os.path.join(DATA_DIR, 'workflow_state.json')
-STORED_WORKFLOWS_METADATA_PATH = os.path.join(DATA_DIR, 'stored_workflows_metadata.json')
 PROMPT_HISTORY_PATH = os.path.join(DATA_DIR, 'prompt_history.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(WORKFLOWS_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 os.makedirs(STORED_WORKFLOWS_DIR, exist_ok=True)
+os.makedirs(STORED_WORKFLOWS_USERS_DIR, exist_ok=True)
+
+
+# Helper function to get user ID from request headers
+def _get_user_id_from_request(request) -> Optional[str]:
+    """Extract user ID from request headers"""
+    user_id = request.headers.get('X-User-Id')
+    return user_id
+
+
+# Helper functions for user-scoped paths
+def _get_user_stored_workflows_dir(user_id: str) -> str:
+    """Get the directory for a user's stored workflows"""
+    user_dir = os.path.join(STORED_WORKFLOWS_USERS_DIR, user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+
+def _get_user_stored_workflows_metadata_path(user_id: str) -> str:
+    """Get the path to user's stored workflows metadata file"""
+    return os.path.join(_get_user_stored_workflows_dir(user_id), 'metadata.json')
+
+
+def _get_user_workflow_state_path(user_id: str) -> str:
+    """Get the path to user's workflow state file"""
+    return os.path.join(DATA_DIR, f'workflow_state_{user_id}.json')
 
 
 # Lifespan event handlers (replaces deprecated on_event)
@@ -53,14 +78,19 @@ async def lifespan(app: FastAPI):
     """Initialize and cleanup workflow scheduler"""
     try:
         # Startup
+        # Note: Scheduler callbacks will need to be updated per-user context
+        # For now, scheduler will be disabled or will need user context passed
         def get_workflows():
-            return _get_workflows_cache()
+            # This is a placeholder - scheduler needs to be updated per-user
+            return []
         
         def get_state(workflow_id: str):
-            return _get_workflow_state(workflow_id)
+            # This is a placeholder - scheduler needs to be updated per-user
+            return {"isActive": False, "isRunning": False}
         
         def update_state(workflow_id: str, updates: dict):
-            _update_workflow_state(workflow_id, updates)
+            # This is a placeholder - scheduler needs to be updated per-user
+            pass
         
         def exec_workflow(workflow: dict, workflow_id: str):
             """Execute workflow with current ComfyUI settings"""
@@ -160,20 +190,23 @@ def _write_json(path: str, data) -> None:
         json.dump(data, f, indent=2)
 
 
-# Stored Workflows Management Functions
-def _get_stored_workflows_metadata() -> dict:
-    """Get metadata for all stored workflows"""
-    return _read_json(STORED_WORKFLOWS_METADATA_PATH, {"workflows": []})
+# Stored Workflows Management Functions (User-Scoped)
+def _get_stored_workflows_metadata(user_id: str) -> dict:
+    """Get metadata for all stored workflows for a specific user"""
+    metadata_path = _get_user_stored_workflows_metadata_path(user_id)
+    return _read_json(metadata_path, {"workflows": []})
 
 
-def _save_stored_workflows_metadata(metadata: dict) -> None:
-    """Save metadata for stored workflows"""
-    _write_json(STORED_WORKFLOWS_METADATA_PATH, metadata)
+def _save_stored_workflows_metadata(user_id: str, metadata: dict) -> None:
+    """Save metadata for stored workflows for a specific user"""
+    metadata_path = _get_user_stored_workflows_metadata_path(user_id)
+    _write_json(metadata_path, metadata)
 
 
-def _get_stored_workflow_file_path(workflow_id: str) -> str:
-    """Get the file path for a stored workflow"""
-    return os.path.join(STORED_WORKFLOWS_DIR, f"{workflow_id}.json")
+def _get_stored_workflow_file_path(user_id: str, workflow_id: str) -> str:
+    """Get the file path for a stored workflow for a specific user"""
+    user_dir = _get_user_stored_workflows_dir(user_id)
+    return os.path.join(user_dir, f"{workflow_id}.json")
 
 
 # ComfyUI Connection Error Detection
@@ -269,10 +302,11 @@ def _append_history(item: dict) -> None:
     _write_json(HISTORY_PATH, history)
 
 
-# Workflow State Management Functions
-def _get_workflow_state(workflow_id: str) -> dict:
-    """Get state for a specific workflow"""
-    state = _read_json(WORKFLOW_STATE_PATH, {})
+# Workflow State Management Functions (User-Scoped)
+def _get_workflow_state(user_id: str, workflow_id: str) -> dict:
+    """Get state for a specific workflow for a specific user"""
+    state_path = _get_user_workflow_state_path(user_id)
+    state = _read_json(state_path, {})
     if workflow_id not in state:
         # Initialize with default state
         state[workflow_id] = {
@@ -283,24 +317,26 @@ def _get_workflow_state(workflow_id: str) -> dict:
             "lastPromptId": None,
             "executionCount": 0
         }
-        _write_json(WORKFLOW_STATE_PATH, state)
+        _write_json(state_path, state)
     return state[workflow_id]
 
 
-def _update_workflow_state(workflow_id: str, updates: dict) -> dict:
-    """Update state for a specific workflow"""
-    state = _read_json(WORKFLOW_STATE_PATH, {})
+def _update_workflow_state(user_id: str, workflow_id: str, updates: dict) -> dict:
+    """Update state for a specific workflow for a specific user"""
+    state_path = _get_user_workflow_state_path(user_id)
+    state = _read_json(state_path, {})
     if workflow_id not in state:
-        _get_workflow_state(workflow_id)  # Initialize if needed
+        _get_workflow_state(user_id, workflow_id)  # Initialize if needed
     
     state[workflow_id].update(updates)
-    _write_json(WORKFLOW_STATE_PATH, state)
+    _write_json(state_path, state)
     return state[workflow_id]
 
 
-def _get_all_workflow_states() -> dict:
-    """Get states for all workflows"""
-    return _read_json(WORKFLOW_STATE_PATH, {})
+def _get_all_workflow_states(user_id: str) -> dict:
+    """Get states for all workflows for a specific user"""
+    state_path = _get_user_workflow_state_path(user_id)
+    return _read_json(state_path, {})
 
 
 # AI Server Helper Functions
@@ -512,19 +548,21 @@ def _get_recent_prompts(workflow_id: str, limit: int = 20) -> list:
     return all_prompts
 
 
-# In-memory storage for workflows (synced from frontend)
-_workflows_cache = []
+# In-memory storage for workflows (synced from frontend) - User-scoped
+_workflows_cache: Dict[str, List] = {}
 
 
-def _set_workflows_cache(workflows: list):
-    """Update the workflows cache"""
+def _set_workflows_cache(user_id: str, workflows: list):
+    """Update the workflows cache for a specific user"""
     global _workflows_cache
-    _workflows_cache = workflows
+    _workflows_cache[user_id] = workflows
 
 
-def _get_workflows_cache() -> list:
-    """Get the workflows cache"""
-    return _workflows_cache
+def _get_workflows_cache(user_id: str) -> list:
+    """Get the workflows cache for a specific user"""
+    if user_id not in _workflows_cache:
+        _workflows_cache[user_id] = []
+    return _workflows_cache[user_id]
 
 
 def _call_llm_to_generate_workflow(prompt: str, api_key: Optional[str]) -> str:
@@ -1171,13 +1209,22 @@ def get_comfyui_file(
 
 # Stored Workflows API Endpoints
 @app.get('/stored-workflows')
-def get_stored_workflows():
-    """List all stored workflows with metadata"""
+def get_stored_workflows(request: Request):
+    """List all stored workflows with metadata for the current user"""
     try:
-        metadata = _get_stored_workflows_metadata()
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        metadata = _get_stored_workflows_metadata(user_id)
+        # Filter to only include workflows with matching userId in metadata
+        workflows = [w for w in metadata.get("workflows", []) if w.get("userId") == user_id]
         return {
             "success": True,
-            "workflows": metadata.get("workflows", [])
+            "workflows": workflows
         }
     except Exception as e:
         return {
@@ -1188,12 +1235,20 @@ def get_stored_workflows():
 
 @app.post('/stored-workflows')
 async def save_stored_workflow(
+    request: Request,
     workflow_file: UploadFile = File(...),
     name: str = Form(default=""),
     description: str = Form(default="")
 ):
-    """Save a new workflow"""
+    """Save a new workflow for the current user"""
     try:
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
         # Read workflow file
         workflow_content = await workflow_file.read()
         workflow_json = json.loads(workflow_content.decode('utf-8'))
@@ -1205,7 +1260,7 @@ async def save_stored_workflow(
         workflow_name = name.strip() if name.strip() else workflow_file.filename or f"Workflow {workflow_id[:8]}"
         
         # Save workflow file
-        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        workflow_path = _get_stored_workflow_file_path(user_id, workflow_id)
         with open(workflow_path, 'w', encoding='utf-8') as f:
             json.dump(workflow_json, f, indent=2)
         
@@ -1218,13 +1273,14 @@ async def save_stored_workflow(
             "filename": workflow_file.filename or "workflow.json",
             "uploadDate": now,
             "lastUsed": None,
-            "fileSize": len(workflow_content)
+            "fileSize": len(workflow_content),
+            "userId": user_id  # Store userId in metadata
         }
         
         # Add to metadata
-        metadata = _get_stored_workflows_metadata()
+        metadata = _get_stored_workflows_metadata(user_id)
         metadata["workflows"].append(workflow_metadata)
-        _save_stored_workflows_metadata(metadata)
+        _save_stored_workflows_metadata(user_id, metadata)
         
         return {
             "success": True,
@@ -1238,11 +1294,18 @@ async def save_stored_workflow(
 
 
 @app.get('/stored-workflows/{workflow_id}')
-def get_stored_workflow(workflow_id: str):
-    """Retrieve a specific workflow JSON file"""
+def get_stored_workflow(workflow_id: str, request: Request):
+    """Retrieve a specific workflow JSON file for the current user"""
     try:
-        metadata = _get_stored_workflows_metadata()
-        workflow_meta = next((w for w in metadata.get("workflows", []) if w["id"] == workflow_id), None)
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        metadata = _get_stored_workflows_metadata(user_id)
+        workflow_meta = next((w for w in metadata.get("workflows", []) if w["id"] == workflow_id and w.get("userId") == user_id), None)
         
         if not workflow_meta:
             return {
@@ -1251,7 +1314,7 @@ def get_stored_workflow(workflow_id: str):
             }
         
         # Read workflow file
-        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        workflow_path = _get_stored_workflow_file_path(user_id, workflow_id)
         if not os.path.exists(workflow_path):
             return {
                 "success": False,
@@ -1276,14 +1339,22 @@ def get_stored_workflow(workflow_id: str):
 @app.put('/stored-workflows/{workflow_id}')
 def update_stored_workflow(
     workflow_id: str,
+    request: Request,
     updates: dict = Body(...)
 ):
-    """Update workflow metadata (name, description)"""
+    """Update workflow metadata (name, description) for the current user"""
     try:
-        metadata = _get_stored_workflows_metadata()
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        metadata = _get_stored_workflows_metadata(user_id)
         workflows = metadata.get("workflows", [])
         
-        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id and w.get("userId") == user_id), None)
         
         if workflow_index is None:
             return {
@@ -1298,7 +1369,7 @@ def update_stored_workflow(
             workflows[workflow_index]["description"] = str(updates["description"]).strip()
         
         metadata["workflows"] = workflows
-        _save_stored_workflows_metadata(metadata)
+        _save_stored_workflows_metadata(user_id, metadata)
         
         return {
             "success": True,
@@ -1312,13 +1383,20 @@ def update_stored_workflow(
 
 
 @app.delete('/stored-workflows/{workflow_id}')
-def delete_stored_workflow(workflow_id: str):
-    """Delete a stored workflow"""
+def delete_stored_workflow(workflow_id: str, request: Request):
+    """Delete a stored workflow for the current user"""
     try:
-        metadata = _get_stored_workflows_metadata()
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        metadata = _get_stored_workflows_metadata(user_id)
         workflows = metadata.get("workflows", [])
         
-        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id and w.get("userId") == user_id), None)
         
         if workflow_index is None:
             return {
@@ -1329,10 +1407,10 @@ def delete_stored_workflow(workflow_id: str):
         # Remove from metadata
         workflows.pop(workflow_index)
         metadata["workflows"] = workflows
-        _save_stored_workflows_metadata(metadata)
+        _save_stored_workflows_metadata(user_id, metadata)
         
         # Delete workflow file
-        workflow_path = _get_stored_workflow_file_path(workflow_id)
+        workflow_path = _get_stored_workflow_file_path(user_id, workflow_id)
         if os.path.exists(workflow_path):
             os.remove(workflow_path)
         
@@ -1348,13 +1426,20 @@ def delete_stored_workflow(workflow_id: str):
 
 
 @app.post('/stored-workflows/{workflow_id}/use')
-def mark_workflow_used(workflow_id: str):
-    """Mark workflow as used (update lastUsed timestamp)"""
+def mark_workflow_used(workflow_id: str, request: Request):
+    """Mark workflow as used (update lastUsed timestamp) for the current user"""
     try:
-        metadata = _get_stored_workflows_metadata()
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        metadata = _get_stored_workflows_metadata(user_id)
         workflows = metadata.get("workflows", [])
         
-        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id), None)
+        workflow_index = next((i for i, w in enumerate(workflows) if w["id"] == workflow_id and w.get("userId") == user_id), None)
         
         if workflow_index is None:
             return {
@@ -1367,7 +1452,7 @@ def mark_workflow_used(workflow_id: str):
         workflows[workflow_index]["lastUsed"] = now
         
         metadata["workflows"] = workflows
-        _save_stored_workflows_metadata(metadata)
+        _save_stored_workflows_metadata(user_id, metadata)
         
         return {
             "success": True,
@@ -1384,17 +1469,30 @@ def mark_workflow_used(workflow_id: str):
 
 # Workflow API Endpoints
 @app.post('/workflows/sync')
-def sync_workflows(workflows: list = Body(...)):
-    """Sync workflow list from frontend"""
-    _set_workflows_cache(workflows)
-    return {"ok": True, "count": len(workflows)}
+def sync_workflows(request: Request, workflows: list = Body(...)):
+    """Sync workflow list from frontend for the current user"""
+    user_id = _get_user_id_from_request(request)
+    if not user_id:
+        return {"ok": False, "error": "User ID required"}
+    
+    # Filter workflows to ensure they belong to the user
+    user_workflows = [w for w in workflows if w.get("userId") == user_id]
+    _set_workflows_cache(user_id, user_workflows)
+    return {"ok": True, "count": len(user_workflows)}
 
 
 @app.post('/workflows/{workflow_id}/activate')
-def activate_workflow(workflow_id: str):
-    """Activate a workflow and start immediate execution"""
+def activate_workflow(workflow_id: str, request: Request):
+    """Activate a workflow and start immediate execution for the current user"""
     try:
-        state = _get_workflow_state(workflow_id)
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        state = _get_workflow_state(user_id, workflow_id)
         
         # Only activate if not already running
         if state.get('isRunning', False):
@@ -1403,9 +1501,9 @@ def activate_workflow(workflow_id: str):
                 "error": "Cannot activate workflow that is currently running"
             }
         
-        # Find workflow to get schedule
-        workflows = _get_workflows_cache()
-        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+        # Find workflow to get schedule (verify it belongs to user)
+        workflows = _get_workflows_cache(user_id)
+        workflow = next((w for w in workflows if w.get('id') == workflow_id and w.get('userId') == user_id), None)
         
         if not workflow:
             return {
@@ -1415,7 +1513,7 @@ def activate_workflow(workflow_id: str):
         
         # Set workflow to active, set isRunning=True immediately to prevent scheduler from executing,
         # and set nextExecutionTime to None for first execution
-        _update_workflow_state(workflow_id, {
+        _update_workflow_state(user_id, workflow_id, {
             "isActive": True,
             "isRunning": True,  # Set immediately to prevent scheduler from executing
             "nextExecutionTime": None  # Set to None so first execution happens immediately
@@ -1427,6 +1525,13 @@ def activate_workflow(workflow_id: str):
         comfyui_path = prefs.get('comfyuiPath')
         output_folder = prefs.get('aiWorkflowsOutputFolder')
         
+        # Create callbacks that include user_id
+        def update_state_cb(wf_id: str, updates: dict):
+            _update_workflow_state(user_id, wf_id, updates)
+        
+        def get_state_cb(wf_id: str):
+            return _get_workflow_state(user_id, wf_id)
+        
         # Execute immediately in background thread
         import threading
         def execute():
@@ -1437,14 +1542,14 @@ def activate_workflow(workflow_id: str):
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
                     output_folder=output_folder,
-                    update_state_callback=_update_workflow_state,
-                    get_state_callback=_get_workflow_state
+                    update_state_callback=update_state_cb,
+                    get_state_callback=get_state_cb
                 )
             except Exception as e:
                 print(f"Workflow activation execution error: {e}")
                 import traceback
                 traceback.print_exc()
-                _update_workflow_state(workflow_id, {"isRunning": False})
+                _update_workflow_state(user_id, workflow_id, {"isRunning": False})
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
@@ -1461,11 +1566,62 @@ def activate_workflow(workflow_id: str):
         }
 
 
-@app.post('/workflows/{workflow_id}/deactivate')
-def deactivate_workflow(workflow_id: str):
-    """Deactivate a workflow (will stop scheduling after current execution finishes)"""
+@app.post('/workflows/deactivate-all')
+def deactivate_all_workflows(request: Request):
+    """Deactivate all active workflows for the current user"""
     try:
-        _update_workflow_state(workflow_id, {
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        # Get all workflow states for user
+        states = _get_all_workflow_states(user_id)
+        deactivated_count = 0
+        
+        # Deactivate all active workflows
+        for workflow_id, state in states.items():
+            if state.get('isActive', False):
+                _update_workflow_state(user_id, workflow_id, {
+                    "isActive": False
+                })
+                deactivated_count += 1
+        
+        return {
+            "success": True,
+            "message": f"Deactivated {deactivated_count} workflow(s)",
+            "count": deactivated_count
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/workflows/{workflow_id}/deactivate')
+def deactivate_workflow(workflow_id: str, request: Request):
+    """Deactivate a workflow (will stop scheduling after current execution finishes) for the current user"""
+    try:
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        # Verify workflow belongs to user
+        workflows = _get_workflows_cache(user_id)
+        workflow = next((w for w in workflows if w.get('id') == workflow_id and w.get('userId') == user_id), None)
+        if not workflow:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        
+        _update_workflow_state(user_id, workflow_id, {
             "isActive": False
         })
         
@@ -1494,15 +1650,20 @@ def cancel_workflow(workflow_id: str):
             }
         
         # Calculate next execution time based on schedule to prevent immediate re-execution
-        workflows = _get_workflows_cache()
-        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
-        schedule_minutes = workflow.get('schedule', 60) if workflow else 60
+        workflows = _get_workflows_cache(user_id)
+        workflow = next((w for w in workflows if w.get('id') == workflow_id and w.get('userId') == user_id), None)
+        if not workflow:
+            return {
+                "success": False,
+                "error": "Workflow not found"
+            }
+        schedule_minutes = workflow.get('schedule', 60)
         
         from datetime import timedelta
         next_execution = (datetime.utcnow() + timedelta(minutes=schedule_minutes)).isoformat() + 'Z'
         
         # Set cancellation flag, stop running, and set next execution time
-        _update_workflow_state(workflow_id, {
+        _update_workflow_state(user_id, workflow_id, {
             "isRunning": False,
             "cancelled": True,
             "nextExecutionTime": next_execution  # Prevent immediate re-execution
@@ -1531,10 +1692,17 @@ def cancel_workflow(workflow_id: str):
 
 
 @app.get('/workflows/{workflow_id}/status')
-def get_workflow_status(workflow_id: str):
-    """Get status for a specific workflow"""
+def get_workflow_status(workflow_id: str, request: Request):
+    """Get status for a specific workflow for the current user"""
     try:
-        state = _get_workflow_state(workflow_id)
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        state = _get_workflow_state(user_id, workflow_id)
         return {
             "success": True,
             "workflow_id": workflow_id,
@@ -1548,10 +1716,17 @@ def get_workflow_status(workflow_id: str):
 
 
 @app.get('/workflows/status')
-def get_all_workflows_status():
-    """Get status for all workflows"""
+def get_all_workflows_status(request: Request):
+    """Get status for all workflows for the current user"""
     try:
-        states = _get_all_workflow_states()
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        states = _get_all_workflow_states(user_id)
         return {
             "success": True,
             "states": states
@@ -1564,12 +1739,19 @@ def get_all_workflows_status():
 
 
 @app.post('/workflows/{workflow_id}/execute')
-def execute_workflow_manual(workflow_id: str):
-    """Manually execute a workflow (for testing, bypasses schedule)"""
+def execute_workflow_manual(workflow_id: str, request: Request):
+    """Manually execute a workflow (for testing, bypasses schedule) for the current user"""
     try:
-        # Find workflow
-        workflows = _get_workflows_cache()
-        workflow = next((w for w in workflows if w.get('id') == workflow_id), None)
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        # Find workflow (verify it belongs to user)
+        workflows = _get_workflows_cache(user_id)
+        workflow = next((w for w in workflows if w.get('id') == workflow_id and w.get('userId') == user_id), None)
         
         if not workflow:
             return {
@@ -1577,7 +1759,7 @@ def execute_workflow_manual(workflow_id: str):
                 "error": "Workflow not found"
             }
         
-        state = _get_workflow_state(workflow_id)
+        state = _get_workflow_state(user_id, workflow_id)
         if state.get('isRunning', False):
             return {
                 "success": False,
@@ -1590,6 +1772,13 @@ def execute_workflow_manual(workflow_id: str):
         comfyui_path = prefs.get('comfyuiPath')
         output_folder = prefs.get('aiWorkflowsOutputFolder')
         
+        # Create callbacks that include user_id
+        def update_state_cb(wf_id: str, updates: dict):
+            _update_workflow_state(user_id, wf_id, updates)
+        
+        def get_state_cb(wf_id: str):
+            return _get_workflow_state(user_id, wf_id)
+        
         # Execute in background
         import threading
         def execute():
@@ -1600,11 +1789,12 @@ def execute_workflow_manual(workflow_id: str):
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
                     output_folder=output_folder,
-                    update_state_callback=_update_workflow_state
+                    update_state_callback=update_state_cb,
+                    get_state_callback=get_state_cb
                 )
             except Exception as e:
                 print(f"Manual execution error: {e}")
-                _update_workflow_state(workflow_id, {"isRunning": False})
+                _update_workflow_state(user_id, workflow_id, {"isRunning": False})
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
