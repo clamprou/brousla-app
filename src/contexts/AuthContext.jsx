@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { login as apiLogin, register as apiRegister, handleGoogleOAuthCallback } from '../utils/apiClient.js'
 import { getUserIdFromToken } from '../utils/userUtils.js'
+import { BASE_API_URL } from '../config/api.js'
 
 const AuthContext = createContext(null)
 
@@ -10,6 +11,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null)
   const [userId, setUserId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isValidated, setIsValidated] = useState(false)
 
   // Extract user ID from token
   const extractUserId = (tokenValue) => {
@@ -23,14 +25,62 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Load token from localStorage on mount
-  useEffect(() => {
-    const storedToken = localStorage.getItem(AUTH_TOKEN_KEY)
-    if (storedToken) {
-      setToken(storedToken)
-      extractUserId(storedToken)
+  // Validate token with backend
+  const validateToken = async (tokenToValidate) => {
+    if (!tokenToValidate) {
+      return false
     }
-    setIsLoading(false)
+
+    try {
+      const response = await fetch(`${BASE_API_URL}/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokenToValidate}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // Token is valid, update userId from response
+        setUserId(data.id)
+        return true
+      } else {
+        // Token is invalid or expired
+        return false
+      }
+    } catch (error) {
+      console.error('Error validating token:', error)
+      return false
+    }
+  }
+
+  // Load and validate token from localStorage on mount
+  useEffect(() => {
+    const loadAndValidateToken = async () => {
+      const storedToken = localStorage.getItem(AUTH_TOKEN_KEY)
+      
+      if (storedToken) {
+        // Validate token with backend
+        const isValid = await validateToken(storedToken)
+        
+        if (isValid) {
+          // Token is valid, set it
+          setToken(storedToken)
+          extractUserId(storedToken)
+        } else {
+          // Token is invalid or expired, clear it
+          localStorage.removeItem(AUTH_TOKEN_KEY)
+          setToken(null)
+          setUserId(null)
+        }
+      }
+      
+      setIsValidated(true)
+      setIsLoading(false)
+    }
+
+    loadAndValidateToken()
   }, [])
 
   const login = async (credentials) => {
@@ -40,6 +90,7 @@ export function AuthProvider({ children }) {
       setToken(newToken)
       localStorage.setItem(AUTH_TOKEN_KEY, newToken)
       extractUserId(newToken)
+      setIsValidated(true) // Token is fresh from backend, so it's valid
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -64,6 +115,7 @@ export function AuthProvider({ children }) {
       setToken(newToken)
       localStorage.setItem(AUTH_TOKEN_KEY, newToken)
       extractUserId(newToken)
+      setIsValidated(true) // Token is fresh from backend, so it's valid
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -98,6 +150,7 @@ export function AuthProvider({ children }) {
     
     setToken(null)
     setUserId(null)
+    setIsValidated(false) // Reset validation state on logout
     localStorage.removeItem(AUTH_TOKEN_KEY)
     
     // NOTE: We do NOT delete userWorkflows from localStorage on logout
@@ -108,7 +161,8 @@ export function AuthProvider({ children }) {
     return userId
   }
 
-  const isAuthenticated = !!token
+  // Only consider authenticated if token exists AND has been validated
+  const isAuthenticated = !!token && isValidated
 
   const value = {
     token,
