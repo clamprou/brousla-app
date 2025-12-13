@@ -73,8 +73,7 @@ async def register(user_data: UserRegister):
     )
     
     # Generate confirmation URL - point to backend, which will redirect to frontend
-    backend_url = f"http://localhost:{settings.port}"
-    confirmation_url = f"{backend_url}/auth/confirm-email?token={verification_token}"
+    confirmation_url = f"{settings.backend_base_url}/auth/confirm-email?token={verification_token}"
     
     # Send confirmation email
     try:
@@ -278,8 +277,7 @@ async def resend_confirmation(request: ResendConfirmationRequest):
     update_user_last_confirmation_email_sent(user_record["id"], datetime.utcnow().isoformat())
     
     # Generate confirmation URL - point to backend, which will redirect to frontend
-    backend_url = f"http://localhost:{settings.port}"
-    confirmation_url = f"{backend_url}/auth/confirm-email?token={verification_token}"
+    confirmation_url = f"{settings.backend_base_url}/auth/confirm-email?token={verification_token}"
     
     # Send confirmation email
     try:
@@ -831,17 +829,7 @@ async def google_callback(
                 "error": None
             }
             
-            # Redirect directly to localhost URL with token
-            # The user should copy this URL or we'll try to open it
-            redirect_params = {
-                "status": "success",
-                "token": access_token_jwt
-            }
-            localhost_url = f"http://localhost:5173/google-oauth-callback?{urlencode(redirect_params)}"
-            
-            # Serve HTML that tries multiple methods to get back to Electron
-            electron_url = f"brousla://google-oauth-callback?{urlencode(redirect_params)}"
-            
+            # Serve simple success page
             html_content = f"""
 <!DOCTYPE html>
 <html>
@@ -867,163 +855,22 @@ async def google_callback(
             backdrop-filter: blur(10px);
             max-width: 500px;
         }}
-        .button {{
-            display: inline-block;
-            margin-top: 1rem;
-            padding: 12px 24px;
-            background: white;
-            color: #667eea;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            transition: transform 0.2s;
+        h2 {{
+            margin-top: 0;
+            margin-bottom: 1rem;
         }}
-        .button:hover {{
-            transform: scale(1.05);
-        }}
-        .spinner {{
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-top: 3px solid white;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }}
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
+        p {{
+            margin: 0.5rem 0;
+            font-size: 1.1em;
         }}
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="spinner"></div>
         <h2>Sign-In Successful!</h2>
-        <p>Click the button below to return to the application:</p>
-        <a href="{electron_url}" class="button" id="returnButton">Return to Application</a>
-        <p style="font-size: 0.9em; opacity: 0.8; margin-top: 1rem;">If the button doesn't work, you can close this window and return to the application manually.</p>
+        <p>You may now return to the application.</p>
+        <p style="font-size: 0.9em; opacity: 0.8; margin-top: 1rem;">You can close this window.</p>
     </div>
-    <script>
-        (function() {{
-            // Try to auto-redirect after a short delay
-            var button = document.getElementById('returnButton');
-            var attempted = false;
-            
-            function attemptRedirect() {{
-                if (attempted) return;
-                attempted = true;
-                
-                // Try custom protocol
-                try {{
-                    window.location.href = '{electron_url}';
-                }} catch (e) {{
-                    console.log('Custom protocol redirect failed:', e);
-                }}
-            }}
-            
-            // Auto-click the button after 1 second
-            setTimeout(function() {{
-                if (button) {{
-                    button.click();
-                }} else {{
-                    attemptRedirect();
-                }}
-            }}, 1000);
-            
-            // Also try on page load
-            window.addEventListener('load', function() {{
-                setTimeout(attemptRedirect, 500);
-            }});
-        }})();
-    </script>
-</body>
-</html>
-            """
-            return HTMLResponse(content=html_content)
-            
-            # HTML page that attempts to open the custom protocol
-            html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Sign-In Successful</title>
-    <meta charset="UTF-8">
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }}
-        .container {{
-            text-align: center;
-            padding: 2rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-        }}
-        .spinner {{
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-top: 3px solid white;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }}
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="spinner"></div>
-        <h2>Sign-In Successful!</h2>
-        <p>Returning to the application...</p>
-        <p style="font-size: 0.9em; opacity: 0.8;">You can close this window.</p>
-    </div>
-    <script>
-        (function() {{
-            // Try multiple methods to communicate with Electron
-            var electronUrl = '{electron_url}';
-            var localhostUrl = '{localhost_url}';
-            
-            // Method 1: Try custom protocol (Electron should catch this)
-            try {{
-                window.location.href = electronUrl;
-            }} catch (e) {{
-                console.error('Failed to redirect to custom protocol:', e);
-            }}
-            
-            // Method 2: Also try localhost URL as fallback (in case Electron intercepts localhost)
-            setTimeout(function() {{
-                try {{
-                    // Try opening in a new window/tab that Electron might intercept
-                    window.open(localhostUrl, '_blank');
-                }} catch (e) {{
-                    console.error('Failed to open localhost URL:', e);
-                }}
-            }}, 500);
-            
-            // Method 3: Fallback message after timeout
-            setTimeout(function() {{
-                var container = document.querySelector('.container');
-                if (container) {{
-                    container.innerHTML = 
-                        '<h2>Sign-In Successful!</h2>' +
-                        '<p>If the application did not open automatically, please return to it manually.</p>' +
-                        '<p style="font-size: 0.9em; opacity: 0.8;">You can close this window.</p>';
-                }}
-            }}, 3000);
-        }})();
-    </script>
 </body>
 </html>
             """

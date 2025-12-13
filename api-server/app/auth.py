@@ -38,8 +38,8 @@ def hash_password(password: str) -> str:
     # Ensure the final password is not longer than 72 bytes when encoded
     final_bytes = password_to_hash.encode('utf-8')
     if len(final_bytes) > 72:
-        # Truncate to 72 bytes
-        password_to_hash = password_to_hash[:72]
+        # Truncate to 72 bytes (not characters) to handle multi-byte UTF-8 correctly
+        password_to_hash = final_bytes[:72].decode('utf-8', errors='ignore')
     
     # Hash using bcrypt directly (avoiding passlib's initialization issues)
     salt = bcrypt.gensalt()
@@ -64,8 +64,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     # Ensure the final password is not longer than 72 bytes when encoded
     final_bytes = password_to_verify.encode('utf-8')
     if len(final_bytes) > 72:
-        # Truncate to 72 bytes
-        password_to_verify = password_to_verify[:72]
+        # Truncate to 72 bytes (not characters) to handle multi-byte UTF-8 correctly
+        password_to_verify = final_bytes[:72].decode('utf-8', errors='ignore')
     
     # Verify using bcrypt directly
     try:

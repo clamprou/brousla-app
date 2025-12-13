@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Server Configuration
     host: str = "0.0.0.0"
     port: int = 8001
+    backend_base_url: str = "http://localhost:8001"  # Backend URL for email confirmation links (configurable for production)
     
     # Email Configuration (Resend)
     resend_api_key: str
