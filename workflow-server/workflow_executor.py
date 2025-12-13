@@ -79,7 +79,8 @@ def execute_workflow(
     comfyui_path: Optional[str] = None,
     output_folder: Optional[str] = None,
     update_state_callback=None,
-    get_state_callback=None
+    get_state_callback=None,
+    user_id: Optional[str] = None
 ) -> Dict:
     """
     Execute a workflow based on its type.
@@ -224,14 +225,15 @@ def _execute_text_to_video_workflow(
                 concept, 
                 numberOfClips, 
                 previous_prompts=previous_prompts if previous_prompts else None,
-                previous_summaries=previous_summaries if previous_summaries else None
+                previous_summaries=previous_summaries if previous_summaries else None,
+                user_id=user_id
             )
             
             # Save new prompts to history
             _save_prompt_history(workflow_id, prompts, concept)
         except ImportError:
             # Fallback if import fails (shouldn't happen in normal operation)
-            prompts = generate_prompts(concept, numberOfClips)
+            prompts = generate_prompts(concept, numberOfClips, user_id=user_id)
         
         if numberOfClips == 1:
             # Single clip workflow - use existing flow
@@ -596,13 +598,13 @@ def _execute_image_to_video_workflow(
             previous_prompts = _get_recent_prompts(workflow_id, limit=20)
             
             # Get prompts from AI agent for video generation (with memory context)
-            prompts = generate_prompts(concept, numberOfClips, previous_prompts=previous_prompts if previous_prompts else None)
+            prompts = generate_prompts(concept, numberOfClips, previous_prompts=previous_prompts if previous_prompts else None, user_id=user_id)
             
             # Save new prompts to history
             _save_prompt_history(workflow_id, prompts, concept)
         except ImportError:
             # Fallback if import fails (shouldn't happen in normal operation)
-            prompts = generate_prompts(concept, numberOfClips)
+            prompts = generate_prompts(concept, numberOfClips, user_id=user_id)
         
         if numberOfClips == 1:
             # Single clip workflow - use existing flow

@@ -326,3 +326,136 @@ export async function handleGoogleOAuthCallback(callbackUrl) {
   }
 }
 
+/**
+ * Get subscription status for the current user
+ * @returns {Promise<Object>} Subscription status information
+ */
+export async function getSubscriptionStatus(token) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/status`
+  
+  const response = await fetch(requestUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to get subscription status')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+
+/**
+ * Check if user can execute a workflow
+ * @param {string} token - JWT token
+ * @returns {Promise<{can_execute: boolean, message: string}>}
+ */
+export async function checkExecutionEligibility(token) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/check-execution`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to check execution eligibility')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+
+/**
+ * Increment execution count after successful workflow execution
+ * @param {string} token - JWT token
+ * @returns {Promise<Object>} Updated subscription status
+ */
+export async function incrementExecutionCount(token) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/increment-execution`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to increment execution count')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+
+/**
+ * Create Stripe checkout session for subscription
+ * @param {string} token - JWT token
+ * @param {string} plan - Subscription plan ('basic', 'plus', or 'pro')
+ * @returns {Promise<{checkout_url: string, session_id: string}>}
+ */
+export async function createCheckoutSession(token, plan) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/create-checkout`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ plan }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to create checkout session')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+

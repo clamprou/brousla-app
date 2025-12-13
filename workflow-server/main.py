@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
             # This is a placeholder - scheduler needs to be updated per-user
             pass
         
-        def exec_workflow(workflow: dict, workflow_id: str):
+        def exec_workflow(workflow: dict, workflow_id: str, user_id: str = None):
             """Execute workflow with current ComfyUI settings"""
             prefs = _read_json(PREFERENCES_PATH, {})
             comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
@@ -104,7 +104,8 @@ async def lifespan(app: FastAPI):
                 comfyui_url=comfyui_url,
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
-                update_state_callback=update_state
+                update_state_callback=update_state,
+                user_id=user_id
             )
         
         def get_prefs():
@@ -1492,6 +1493,43 @@ def activate_workflow(workflow_id: str, request: Request):
                 "error": "User ID required"
             }
         
+        # Check subscription before activating
+        try:
+            api_base_url = os.getenv('AI_API_BASE_URL', 'http://localhost:8001')
+            check_response = requests.post(
+                f"{api_base_url}/api/subscription/check-execution-internal",
+                json={"user_id": user_id},
+                headers={
+                    "Content-Type": "application/json"
+                },
+                timeout=5
+            )
+            
+            if check_response.status_code == 200:
+                check_data = check_response.json()
+                if not check_data.get("can_execute", False):
+                    return {
+                        "success": False,
+                        "error": check_data.get("message", "Subscription limit reached"),
+                        "subscription_error": True
+                    }
+            elif check_response.status_code == 403:
+                # Subscription check failed
+                error_data = check_response.json() if check_response.headers.get("content-type", "").startswith("application/json") else {}
+                return {
+                    "success": False,
+                    "error": error_data.get("detail", "Subscription limit reached"),
+                    "subscription_error": True
+                }
+        except Exception as e:
+            # If subscription check fails, log but continue (for development/testing)
+            print(f"Warning: Subscription check failed: {e}")
+            # In production, you might want to fail here
+            # return {
+            #     "success": False,
+            #     "error": "Unable to verify subscription. Please try again."
+            # }
+        
         state = _get_workflow_state(user_id, workflow_id)
         
         # Only activate if not already running
@@ -1536,15 +1574,33 @@ def activate_workflow(workflow_id: str, request: Request):
         import threading
         def execute():
             try:
-                execute_workflow(
+                result = execute_workflow(
                     workflow=workflow,
                     workflow_id=workflow_id,
                     comfyui_url=comfyui_url,
                     comfyui_path=comfyui_path,
                     output_folder=output_folder,
                     update_state_callback=update_state_cb,
-                    get_state_callback=get_state_cb
+                    get_state_callback=get_state_cb,
+                    user_id=user_id
                 )
+                
+                # Increment execution count after successful execution
+                if result.get("success"):
+                    try:
+                        api_base_url = os.getenv('AI_API_BASE_URL', 'http://localhost:8001')
+                        increment_response = requests.post(
+                            f"{api_base_url}/api/subscription/increment-execution-internal",
+                            json={"user_id": user_id},
+                            headers={
+                                "Content-Type": "application/json"
+                            },
+                            timeout=5
+                        )
+                        if increment_response.status_code != 200:
+                            print(f"Warning: Failed to increment execution count: {increment_response.status_code}")
+                    except Exception as e:
+                        print(f"Warning: Error incrementing execution count: {e}")
             except Exception as e:
                 print(f"Workflow activation execution error: {e}")
                 import traceback
@@ -1790,7 +1846,8 @@ def execute_workflow_manual(workflow_id: str, request: Request):
                     comfyui_path=comfyui_path,
                     output_folder=output_folder,
                     update_state_callback=update_state_cb,
-                    get_state_callback=get_state_cb
+                    get_state_callback=get_state_cb,
+                    user_id=user_id
                 )
             except Exception as e:
                 print(f"Manual execution error: {e}")

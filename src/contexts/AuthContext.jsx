@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { login as apiLogin, register as apiRegister, handleGoogleOAuthCallback } from '../utils/apiClient.js'
 import { getUserIdFromToken } from '../utils/userUtils.js'
 import { BASE_API_URL } from '../config/api.js'
@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [userId, setUserId] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isValidated, setIsValidated] = useState(false)
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null)
 
   // Extract user ID from token
   const extractUserId = (tokenValue) => {
@@ -24,6 +25,35 @@ export function AuthProvider({ children }) {
       return null
     }
   }
+
+  // Fetch subscription status - memoized to prevent infinite loops
+  const fetchSubscriptionStatus = useCallback(async (tokenToUse = null) => {
+    const tokenToFetch = tokenToUse || token
+    if (!tokenToFetch) {
+      setSubscriptionStatus(null)
+      return
+    }
+
+    try {
+      const response = await fetch(`${BASE_API_URL}/api/subscription/status`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokenToFetch}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSubscriptionStatus(data)
+      } else {
+        setSubscriptionStatus(null)
+      }
+    } catch (error) {
+      console.error('Error fetching subscription status:', error)
+      setSubscriptionStatus(null)
+    }
+  }, [token])
 
   // Validate token with backend
   const validateToken = async (tokenToValidate) => {
@@ -44,6 +74,8 @@ export function AuthProvider({ children }) {
         const data = await response.json()
         // Token is valid, update userId from response
         setUserId(data.id)
+        // Fetch subscription status
+        await fetchSubscriptionStatus(tokenToValidate)
         return true
       } else {
         // Token is invalid or expired
@@ -91,6 +123,8 @@ export function AuthProvider({ children }) {
       localStorage.setItem(AUTH_TOKEN_KEY, newToken)
       extractUserId(newToken)
       setIsValidated(true) // Token is fresh from backend, so it's valid
+      // Fetch subscription status
+      await fetchSubscriptionStatus(newToken)
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -116,13 +150,15 @@ export function AuthProvider({ children }) {
       localStorage.setItem(AUTH_TOKEN_KEY, newToken)
       extractUserId(newToken)
       setIsValidated(true) // Token is fresh from backend, so it's valid
+      // Fetch subscription status
+      await fetchSubscriptionStatus(newToken)
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
     }
   }
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     // Save userId before clearing it (for deactivation and clearing workflowManager)
     const currentUserId = userId
     
@@ -151,11 +187,12 @@ export function AuthProvider({ children }) {
     setToken(null)
     setUserId(null)
     setIsValidated(false) // Reset validation state on logout
+    setSubscriptionStatus(null)
     localStorage.removeItem(AUTH_TOKEN_KEY)
     
     // NOTE: We do NOT delete userWorkflows from localStorage on logout
     // This allows workflows to persist across login sessions
-  }
+  }, [userId])
 
   const getUserId = () => {
     return userId
@@ -169,11 +206,13 @@ export function AuthProvider({ children }) {
     userId,
     isAuthenticated,
     isLoading,
+    subscriptionStatus,
     login,
     register,
     loginWithGoogle,
     logout,
     getUserId,
+    fetchSubscriptionStatus,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

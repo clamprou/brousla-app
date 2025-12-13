@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # OpenAI Configuration
     openai_api_key: str
-    openai_model: str = "gpt-4-turbo-preview"  # Default OpenAI model
+    openai_model: str = "gpt-5-mini"  # Default OpenAI model
     openai_temperature: float = 1.0  # Default temperature (1.0 works for all models)
     
     # AI Provider Configuration
@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     # Note: Google requires HTTP/HTTPS redirect URIs, not custom protocols
     # We use localhost HTTP, then redirect to custom protocol for Electron
     # The redirect URI will be computed as http://localhost:{port}/auth/google/callback
+    
+    # Stripe Configuration
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    stripe_publishable_key: Optional[str] = None
+    stripe_basic_price_id: Optional[str] = None
+    stripe_plus_price_id: Optional[str] = None
+    stripe_pro_price_id: Optional[str] = None
     
     class Config:
         env_file = str(_ENV_FILE)

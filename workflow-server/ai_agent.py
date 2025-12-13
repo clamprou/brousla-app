@@ -21,7 +21,8 @@ def generate_prompts(
     concept: str, 
     numberOfClips: int, 
     previous_prompts: Optional[List[str]] = None,
-    previous_summaries: Optional[List[str]] = None
+    previous_summaries: Optional[List[str]] = None,
+    user_id: Optional[str] = None
 ) -> List[str]:
     """
     Generate prompts for each clip based on the concept and number of clips.
@@ -80,9 +81,14 @@ def generate_prompts(
     logger.info(f"Requesting prompts from AI agent: {api_url}")
     
     try:
+        headers = {"Content-Type": "application/json"}
+        if user_id:
+            headers["X-User-Id"] = user_id
+        
         response = requests.post(
             api_url,
             json=payload,
+            headers=headers,
             timeout=30  # 30 second timeout
         )
         

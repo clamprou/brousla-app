@@ -59,7 +59,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 JWT_SECRET=your-secret-key-change-this-in-production-min-32-chars
 
 # Optional (with defaults)
-OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_MODEL=gpt-5-mini
 OPENAI_TEMPERATURE=1.0
 AI_PROVIDER=openai
 RATE_LIMIT_REQUESTS_PER_MINUTE=60
@@ -97,7 +97,7 @@ The API will be available at:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes | - | Your OpenAI API key |
-| `OPENAI_MODEL` | No | `gpt-4-turbo-preview` | OpenAI model to use (e.g., `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `gpt-4o`, `gpt-4o-mini`) |
+| `OPENAI_MODEL` | No | `gpt-5-mini` | OpenAI model to use (e.g., `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `gpt-4o`, `gpt-4o-mini`, `gpt-5-mini`) |
 | `OPENAI_TEMPERATURE` | No | `1.0` | Temperature for AI responses (0.0-2.0). Note: Some models like `gpt-4o-mini` only support 1.0 |
 | `JWT_SECRET` | Yes | - | Secret key for JWT signing (min 32 chars) |
 | `AI_PROVIDER` | No | `openai` | Provider: `openai` or `openai-compatible` |

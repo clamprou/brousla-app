@@ -1,0 +1,11 @@
+{
+  "1765558847742": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-13T16:42:01.172595Z",
+    "nextExecutionTime": null,
+    "lastPromptId": null,
+    "executionCount": 0,
+    "cancelled": false
+  }
+}

@@ -1,24 +1,33 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { LogOut, User, Mail, Shield } from 'lucide-react'
+import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, Check, ExternalLink } from 'lucide-react'
 import { BASE_API_URL } from '../config/api.js'
+import { createCheckoutSession } from '../utils/apiClient.js'
 
 export default function Profile() {
-  const { token, logout } = useAuth()
+  const { token, logout, subscriptionStatus, fetchSubscriptionStatus } = useAuth()
   const [userInfo, setUserInfo] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
+  const fetchingRef = useRef(false)
 
   useEffect(() => {
-    const fetchUserInfo = async () => {
-      if (!token) {
-        setIsLoading(false)
-        return
-      }
+    if (!token) {
+      setIsLoading(false)
+      return
+    }
 
+    // Prevent multiple simultaneous fetches
+    if (fetchingRef.current) {
+      return
+    }
+
+    fetchingRef.current = true
+    let isMounted = true
+    
+    const fetchUserInfo = async () => {
       try {
-        console.log('Fetching user info with token:', token.substring(0, 20) + '...')
-        
         const response = await fetch(`${BASE_API_URL}/auth/me`, {
           method: 'GET',
           headers: {
@@ -27,7 +36,10 @@ export default function Profile() {
           },
         })
 
-        console.log('User info response status:', response.status)
+        if (!isMounted) {
+          fetchingRef.current = false
+          return
+        }
 
         if (response.ok) {
           const data = await response.json()
@@ -41,30 +53,86 @@ export default function Profile() {
             errorData = { detail: errorText }
           }
           
-          console.error('Failed to load user info:', {
-            status: response.status,
-            statusText: response.statusText,
-            body: errorData
-          })
-          
           if (response.status === 401) {
             setError('Authentication failed. Please log in again.')
-            // Token might be invalid, logout user
             logout()
           } else {
             setError(errorData.detail || 'Failed to load user information')
           }
         }
       } catch (err) {
+        if (!isMounted) {
+          fetchingRef.current = false
+          return
+        }
         console.error('Error fetching user info:', err)
         setError('Error loading user information: ' + err.message)
       } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+          fetchingRef.current = false
+        }
       }
     }
 
     fetchUserInfo()
-  }, [token, logout])
+    
+    return () => {
+      isMounted = false
+      fetchingRef.current = false
+    }
+    // Only run when token changes, not when subscriptionStatus or other values change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+  
+  // Check for Stripe callback - only run once on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const sessionId = urlParams.get('session_id')
+    const cancelled = urlParams.get('cancelled')
+    
+    if (sessionId) {
+      // Success - refresh subscription status
+      setTimeout(() => {
+        if (token) {
+          fetchSubscriptionStatus()
+        }
+        // Remove query params from URL
+        window.history.replaceState({}, '', window.location.pathname)
+      }, 1000)
+    } else if (cancelled) {
+      // Cancelled - just remove query params
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleUpgrade = async (plan) => {
+    if (!token) return
+    
+    setIsCreatingCheckout(true)
+    try {
+      const result = await createCheckoutSession(token, plan)
+      // Redirect to Stripe checkout
+      window.location.href = result.checkout_url
+    } catch (err) {
+      setError(err.message || 'Failed to create checkout session')
+      setIsCreatingCheckout(false)
+    }
+  }
+
+  const getUsageText = () => {
+    if (!subscriptionStatus?.usage) return 'N/A'
+    const usage = subscriptionStatus.usage
+    if (usage.type === 'trial') {
+      return `${usage.used} / ${usage.limit} free executions`
+    } else if (usage.type === 'monthly') {
+      return `${usage.used} / ${usage.limit} executions this month`
+    } else {
+      return `${usage.used} executions this month`
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -118,6 +186,125 @@ export default function Profile() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Subscription Section */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <CreditCard className="h-5 w-5 text-gray-400" />
+                <h3 className="text-lg font-semibold text-gray-200">Subscription</h3>
+              </div>
+              
+              {subscriptionStatus ? (
+                <div className="space-y-4">
+                  {/* Current Plan */}
+                  <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">Current Plan</span>
+                      <span className="text-sm font-medium text-gray-200">
+                        {subscriptionStatus.subscription_plan 
+                          ? subscriptionStatus.subscription_plan.charAt(0).toUpperCase() + subscriptionStatus.subscription_plan.slice(1)
+                          : 'Free Trial'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-400">Usage</span>
+                      <span className="text-sm font-medium text-gray-200">{getUsageText()}</span>
+                    </div>
+                    {subscriptionStatus.subscription_end_date && (
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-sm text-gray-400">Renews</span>
+                        <span className="text-sm text-gray-300">
+                          {new Date(subscriptionStatus.subscription_end_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upgrade Options */}
+                  {(!subscriptionStatus.subscription_plan || subscriptionStatus.subscription_plan === 'trial') && (
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {/* Basic Plan */}
+                      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap className="h-4 w-4 text-blue-400" />
+                          <h4 className="font-semibold text-gray-200">Basic</h4>
+                        </div>
+                        <div className="mb-2">
+                          <span className="text-xl font-bold text-gray-100">€5.99</span>
+                          <span className="text-xs text-gray-400">/month</span>
+                        </div>
+                        <p className="text-sm text-gray-400 mb-3">500 executions/month</p>
+                        <button
+                          onClick={() => handleUpgrade('basic')}
+                          disabled={isCreatingCheckout}
+                          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isCreatingCheckout ? 'Processing...' : 'Upgrade to Basic'}
+                        </button>
+                      </div>
+
+                      {/* Plus Plan */}
+                      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Crown className="h-4 w-4 text-purple-400" />
+                          <h4 className="font-semibold text-gray-200">Plus</h4>
+                          <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full text-xs">
+                            Popular
+                          </span>
+                        </div>
+                        <div className="mb-2">
+                          <span className="text-xl font-bold text-gray-100">€14.99</span>
+                          <span className="text-xs text-gray-400">/month</span>
+                        </div>
+                        <p className="text-sm text-gray-400 mb-3">2000 executions/month</p>
+                        <button
+                          onClick={() => handleUpgrade('plus')}
+                          disabled={isCreatingCheckout}
+                          className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isCreatingCheckout ? 'Processing...' : 'Upgrade to Plus'}
+                        </button>
+                      </div>
+
+                      {/* Pro Plan */}
+                      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Crown className="h-4 w-4 text-yellow-400" />
+                          <h4 className="font-semibold text-gray-200">Pro</h4>
+                        </div>
+                        <div className="mb-2">
+                          <span className="text-xl font-bold text-gray-100">€29.99</span>
+                          <span className="text-xs text-gray-400">/month</span>
+                        </div>
+                        <p className="text-sm text-gray-400 mb-3">5000 executions/month</p>
+                        <button
+                          onClick={() => handleUpgrade('pro')}
+                          disabled={isCreatingCheckout}
+                          className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isCreatingCheckout ? 'Processing...' : 'Upgrade to Pro'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active Subscription Info */}
+                  {subscriptionStatus.subscription_plan && subscriptionStatus.subscription_plan !== 'trial' && (
+                    <div className="bg-green-600/10 border border-green-600/30 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Check className="h-4 w-4 text-green-400" />
+                        <span className="text-sm font-medium text-green-300">Active Subscription</span>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        Your subscription is active. You can manage it through your Stripe customer portal.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400">Loading subscription information...</div>
+              )}
             </div>
 
             {/* Logout Section */}

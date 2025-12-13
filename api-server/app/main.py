@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes_auth import router as auth_router
 from app.routes_ai import router as ai_router
+from app.routes_subscription import router as subscription_router
 
 # Configure logging level to DEBUG for our modules
 logging.basicConfig(
@@ -33,6 +34,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(ai_router)
+app.include_router(subscription_router)
 
 
 @app.get("/")

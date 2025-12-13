@@ -1,12 +1,15 @@
 """AI chat routes."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import Optional
 from fastapi.responses import StreamingResponse
 from app.models import (
     ChatRequest, PromptGenerationRequest, PromptGenerationResponse, ChatMessage,
     EmbeddingRequest, EmbeddingResponse, SummarizePromptsRequest, SummarizePromptsResponse
 )
-from app.auth import get_current_user
+from app.auth import get_current_user, decode_access_token
+from fastapi.security import HTTPBearer
 from app.rate_limit import get_rate_limiter
+from app.subscription import check_subscription_required
 from app.llm.factory import get_llm_client
 from app.config import settings
 import json
@@ -22,12 +25,12 @@ router = APIRouter(prefix="/api", tags=["ai"])
 @router.post("/chat")
 async def chat(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(check_subscription_required)
 ):
     """
     Send a chat request to the LLM.
     
-    Requires authentication via JWT token.
+    Requires authentication via JWT token and valid subscription.
     Enforces rate limiting per user.
     
     Supports both streaming and non-streaming modes.
@@ -82,15 +85,62 @@ async def chat(
 
 @router.post("/generate-prompts", response_model=PromptGenerationResponse)
 async def generate_prompts(
-    request: PromptGenerationRequest
+    request: PromptGenerationRequest,
+    http_request: Request,
+    authorization: Optional[str] = None
 ):
     """
     Generate diverse prompts for video clips based on a concept.
     
-    This endpoint is designed for internal server-to-server calls and does not
-    require authentication. It generates distinct but related prompts for each clip
+    Requires authentication via JWT token and valid subscription, OR
+    X-User-Id header for internal service calls.
+    It generates distinct but related prompts for each clip
     to create a cohesive multi-clip video.
     """
+    from app.subscription import can_user_execute_workflow
+    
+    # Check if this is an internal call (X-User-Id header)
+    user_id = http_request.headers.get("X-User-Id")
+    
+    if user_id:
+        # Internal call from workflow server - check subscription using user_id
+        can_execute, message = can_user_execute_workflow(user_id)
+        if not can_execute:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=message
+            )
+    else:
+        # Regular authenticated call - get user from JWT
+        auth_header = http_request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        
+        token = auth_header.split(" ")[1]
+        payload = decode_access_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+        
+        # Check subscription
+        can_execute, message = can_user_execute_workflow(user_id)
+        if not can_execute:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=message
+            )
     if request.number_of_clips < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
