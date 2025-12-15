@@ -283,7 +283,8 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
                 "executions_used_this_month": row["executions_used_this_month"] or 0,
                 "executions_reset_date": row["executions_reset_date"],
                 "stripe_customer_id": row["stripe_customer_id"],
-                "stripe_subscription_id": row["stripe_subscription_id"]
+                "stripe_subscription_id": row["stripe_subscription_id"],
+                "monthly_workflow_limit": row["monthly_workflow_limit"]
             }
         return None
 

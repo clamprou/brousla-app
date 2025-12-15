@@ -1,5 +1,13 @@
 [
   {
+    "id": "2739aa777ff84ec8acd7b4bfba3e6f0c",
+    "type": "generation_result",
+    "prompt_id": "4421f192-2293-4625-9ff1-8450028e5eea",
+    "filename": "ComfyUI_00024_.mp4",
+    "subfolder": "video",
+    "createdAt": "2025-12-15T14:55:26.031670Z"
+  },
+  {
     "id": "d4d1bb2fa96d45fba9efe0d38bc7ba5d",
     "type": "generation_result",
     "prompt_id": "992e6e7e-f793-416b-ae3a-09973c808d90",

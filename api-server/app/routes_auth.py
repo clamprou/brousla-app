@@ -362,8 +362,8 @@ async def google_login():
     # Clean up old states (older than 10 minutes)
     cutoff_time = datetime.utcnow() - timedelta(minutes=10)
     expired_states = [s for s, data in _oauth_states.items() 
-                     if isinstance(data, dict) and data.get("timestamp", datetime.utcnow()) < cutoff_time
-                     or not isinstance(data, dict) and data < cutoff_time]  # Backward compatibility
+                     if (isinstance(data, dict) and data.get("timestamp", datetime.utcnow()) < cutoff_time)
+                     or (not isinstance(data, dict) and isinstance(data, datetime) and data < cutoff_time)]  # Backward compatibility with type check
     for expired_state in expired_states:
         del _oauth_states[expired_state]
     
