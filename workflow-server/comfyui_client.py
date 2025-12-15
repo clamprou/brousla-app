@@ -43,46 +43,62 @@ class ComfyUIClient:
                 timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            # Ensure we return a dict, not None
+            if data is None:
+                return {}
+            return data if isinstance(data, dict) else {}
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to get history: {e}")
-            raise Exception(f"Failed to get ComfyUI history: {e}")
+            logger.debug(f"Failed to get history for prompt {prompt_id}: {e}")
+            # Return empty dict instead of raising, so status check can continue
+            return {}
     
     def get_prompt_status(self, prompt_id: str) -> Dict[str, Any]:
         """Get the current status of a prompt execution"""
         try:
             # Check if prompt is in history (completed)
-            history = self.get_history(prompt_id)
-            if prompt_id in history:
-                return {
-                    "status": "completed",
-                    "prompt_id": prompt_id,
-                    "message": "Execution completed successfully"
-                }
+            try:
+                history = self.get_history(prompt_id)
+                if history and isinstance(history, dict) and prompt_id in history:
+                    return {
+                        "status": "completed",
+                        "prompt_id": prompt_id,
+                        "message": "Execution completed successfully"
+                    }
+            except Exception as e:
+                logger.debug(f"Could not check history for prompt {prompt_id}: {e}")
             
             # Check if prompt is in queue (running)
-            queue = self.get_queue()
-            queue_pending = queue.get("queue_pending", [])
-            queue_running = queue.get("queue_running", [])
-            
-            # Check pending queue
-            for item in queue_pending:
-                if item[1] == prompt_id:
-                    return {
-                        "status": "pending",
-                        "prompt_id": prompt_id,
-                        "message": "Waiting in queue",
-                        "position": queue_pending.index(item) + 1
-                    }
-            
-            # Check running queue
-            for item in queue_running:
-                if item[1] == prompt_id:
-                    return {
-                        "status": "running",
-                        "prompt_id": prompt_id,
-                        "message": "Currently executing"
-                    }
+            try:
+                queue = self.get_queue()
+                if queue and isinstance(queue, dict):
+                    queue_pending = queue.get("queue_pending", [])
+                    queue_running = queue.get("queue_running", [])
+                    
+                    # Check pending queue
+                    if isinstance(queue_pending, list):
+                        for item in queue_pending:
+                            if isinstance(item, (list, tuple)) and len(item) > 1:
+                                if item[1] == prompt_id:
+                                    return {
+                                        "status": "pending",
+                                        "prompt_id": prompt_id,
+                                        "message": "Waiting in queue",
+                                        "position": queue_pending.index(item) + 1
+                                    }
+                    
+                    # Check running queue
+                    if isinstance(queue_running, list):
+                        for item in queue_running:
+                            if isinstance(item, (list, tuple)) and len(item) > 1:
+                                if item[1] == prompt_id:
+                                    return {
+                                        "status": "running",
+                                        "prompt_id": prompt_id,
+                                        "message": "Currently executing"
+                                    }
+            except Exception as e:
+                logger.debug(f"Could not check queue for prompt {prompt_id}: {e}")
             
             # Prompt not found in any queue or history
             return {
@@ -93,6 +109,8 @@ class ComfyUIClient:
             
         except Exception as e:
             logger.error(f"Failed to get prompt status: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {
                 "status": "error",
                 "prompt_id": prompt_id,
@@ -104,9 +122,24 @@ class ComfyUIClient:
         try:
             status = self.get_prompt_status(prompt_id)
             
-            if status["status"] == "completed":
+            # Ensure status is a dict
+            if not isinstance(status, dict):
+                return {
+                    "status": "error",
+                    "prompt_id": prompt_id,
+                    "progress": 0,
+                    "message": "Invalid status response"
+                }
+            
+            status_value = status.get("status", "unknown")
+            
+            if status_value == "completed":
                 # Get execution result
-                result = self._get_execution_result(prompt_id)
+                try:
+                    result = self._get_execution_result(prompt_id)
+                except Exception as e:
+                    logger.debug(f"Could not get execution result: {e}")
+                    result = None
                 return {
                     "status": "completed",
                     "prompt_id": prompt_id,
@@ -114,14 +147,16 @@ class ComfyUIClient:
                     "message": "Execution completed",
                     "result": result
                 }
-            elif status["status"] == "running":
+            elif status_value == "running":
+                # For running status, we'll use a simple approach without trying to get real-time progress
+                # since ComfyUI's progress endpoint may not be available or reliable
                 return {
                     "status": "running",
                     "prompt_id": prompt_id,
-                    "progress": 50,  # Approximate progress for running
+                    "progress": 0,  # We'll just show "running" status without percentage
                     "message": "Currently executing workflow"
                 }
-            elif status["status"] == "pending":
+            elif status_value == "pending":
                 return {
                     "status": "pending",
                     "prompt_id": prompt_id,
@@ -129,16 +164,88 @@ class ComfyUIClient:
                     "message": f"Waiting in queue (position {status.get('position', '?')})"
                 }
             else:
-                return status
+                # Return the status dict as-is, but ensure it has required fields
+                return {
+                    "status": status_value,
+                    "prompt_id": prompt_id,
+                    "progress": 0,
+                    "message": status.get("message", "Unknown status")
+                }
                 
         except Exception as e:
             logger.error(f"Failed to get prompt progress: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {
                 "status": "error",
                 "prompt_id": prompt_id,
                 "progress": 0,
                 "message": f"Error getting progress: {str(e)}"
             }
+    
+    def _get_realtime_progress(self, prompt_id: str) -> Optional[Dict[str, Any]]:
+        """Get real-time progress from ComfyUI's progress endpoint"""
+        try:
+            response = requests.get(
+                f"{self.server_url}/progress",
+                headers=self._get_headers(),
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # ComfyUI progress endpoint returns different formats:
+            # Format 1: {"running": [[prompt_id, node_id, value, max], ...]}
+            # Format 2: {"running": [{"prompt_id": ..., "value": ..., "max": ...}, ...]}
+            # Format 3: Direct dict with value/max
+            
+            if isinstance(data, dict):
+                # Check for "running" key
+                if "running" in data:
+                    running = data["running"]
+                    if isinstance(running, list) and len(running) > 0:
+                        # Check each item in the running list
+                        for item in running:
+                            if item is None:
+                                continue
+                            
+                            # Format 1: List format [prompt_id, node_id, value, max, ...]
+                            if isinstance(item, list) and len(item) > 0:
+                                try:
+                                    if item[0] == prompt_id:
+                                        # Found our prompt, get progress info
+                                        # ComfyUI progress format: [prompt_id, node_id, value, max, ...]
+                                        if len(item) >= 4:
+                                            value = item[2] if isinstance(item[2], (int, float)) else 0
+                                            max_val = item[3] if isinstance(item[3], (int, float)) else 1.0
+                                            return {
+                                                "value": value,
+                                                "max": max_val
+                                            }
+                                except (IndexError, TypeError) as e:
+                                    logger.debug(f"Error parsing progress item: {e}")
+                                    continue
+                            
+                            # Format 2: Dict format {"prompt_id": ..., "value": ..., "max": ...}
+                            elif isinstance(item, dict):
+                                if item.get("prompt_id") == prompt_id:
+                                    return {
+                                        "value": item.get("value", 0),
+                                        "max": item.get("max", 1.0)
+                                    }
+                
+                # Format 3: Direct dict with value/max (for current execution)
+                if "value" in data and "max" in data:
+                    # Check if this is for our prompt_id (might not have prompt_id in this format)
+                    return {
+                        "value": data.get("value", 0),
+                        "max": data.get("max", 1.0)
+                    }
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Error getting real-time progress: {e}")
+            return None
     
     def get_image(self, filename: str, subfolder: str = "", folder_type: str = "output") -> bytes:
         """Download an image from ComfyUI"""
@@ -243,11 +350,16 @@ class ComfyUIClient:
     async def _get_execution_result(self, prompt_id: str) -> Dict[str, Any]:
         """Get the execution result from history"""
         history = self.get_history(prompt_id)
-        if prompt_id not in history:
+        if not history or not isinstance(history, dict) or prompt_id not in history:
             raise Exception("Prompt not found in history")
         
         prompt_data = history[prompt_id]
+        if not isinstance(prompt_data, dict):
+            raise Exception("Invalid prompt data format in history")
+        
         outputs = prompt_data.get("outputs", {})
+        if not isinstance(outputs, dict):
+            outputs = {}
         
         result = {
             "prompt_id": prompt_id,
@@ -258,13 +370,16 @@ class ComfyUIClient:
         
         # Extract image information
         for node_id, node_output in outputs.items():
-            if "images" in node_output:
-                for img_info in node_output["images"]:
-                    result["images"].append({
-                        "filename": img_info["filename"],
-                        "subfolder": img_info.get("subfolder", ""),
-                        "type": img_info.get("type", "output")
-                    })
+            if isinstance(node_output, dict) and "images" in node_output:
+                images = node_output["images"]
+                if isinstance(images, list):
+                    for img_info in images:
+                        if isinstance(img_info, dict):
+                            result["images"].append({
+                                "filename": img_info.get("filename", ""),
+                                "subfolder": img_info.get("subfolder", ""),
+                                "type": img_info.get("type", "output")
+                            })
         
         return result
     

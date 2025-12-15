@@ -75,6 +75,9 @@ class WorkflowScheduler:
         workflows = self.get_workflows()
         current_time = datetime.utcnow()
         
+        if workflows:
+            print(f"Scheduler checking {len(workflows)} workflow(s) at {current_time.isoformat()}")
+        
         for workflow in workflows:
             workflow_id = workflow.get('id')
             if not workflow_id:
@@ -106,8 +109,20 @@ class WorkflowScheduler:
                 # If nextExecutionTime is None, don't execute here - it's being handled by activation
                 
                 if should_execute:
-                    print(f"Executing scheduled workflow: {workflow_id} ({workflow.get('name', 'Unnamed')})")
+                    print(f"[SCHEDULER] Executing scheduled workflow: {workflow_id} ({workflow.get('name', 'Unnamed')}) - nextExecutionTime was {next_execution}")
                     self._execute_workflow_async(workflow, workflow_id)
+                else:
+                    # Log why it's not executing
+                    if next_execution is None:
+                        print(f"[SCHEDULER] Workflow {workflow_id} skipped: nextExecutionTime is None (handled by activation)")
+                    else:
+                        try:
+                            next_execution_time = datetime.fromisoformat(next_execution.replace('Z', '+00:00'))
+                            if current_time < next_execution_time.replace(tzinfo=None):
+                                time_until = (next_execution_time.replace(tzinfo=None) - current_time).total_seconds() / 60
+                                print(f"[SCHEDULER] Workflow {workflow_id} skipped: nextExecutionTime is {time_until:.1f} minutes in the future")
+                        except:
+                            pass
             
             except Exception as e:
                 print(f"Error checking workflow {workflow_id}: {e}")

@@ -11,10 +11,56 @@
   "1765801610782": {
     "isActive": false,
     "isRunning": false,
-    "lastExecutionTime": "2025-12-15T14:48:44.885074Z",
-    "nextExecutionTime": "2025-12-15T15:10:26.039187Z",
-    "lastPromptId": "4421f192-2293-4625-9ff1-8450028e5eea",
+    "lastExecutionTime": "2025-12-15T16:00:39.861479Z",
+    "nextExecutionTime": null,
+    "lastPromptId": "4b073331-a0eb-4691-a9ad-8128314a2448",
+    "executionCount": 3,
+    "cancelled": false,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 40
+  },
+  "1765814925501": {
+    "isActive": true,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-15T16:56:29.140835Z",
+    "nextExecutionTime": null,
+    "lastPromptId": "5fd50faf-959e-48a3-85e9-bd97354feb37",
+    "executionCount": 0,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 40,
+    "cancelled": false
+  },
+  "1765820174156": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-15T17:36:17.700349Z",
+    "nextExecutionTime": "2025-12-15T17:51:17.944853Z",
+    "lastPromptId": "ac11898e-ee57-4fdd-9315-472eaa6b1935",
     "executionCount": 1,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 100,
+    "cancelled": false
+  },
+  "1765821087237": {
+    "isActive": true,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-15T19:59:09.699505Z",
+    "nextExecutionTime": null,
+    "lastPromptId": "01adfb97-f62f-4d52-a98f-7d4d105716a2",
+    "executionCount": 5,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 35,
+    "cancelled": false
+  },
+  "1765828864538": {
+    "isActive": true,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-15T20:01:10.895463Z",
+    "nextExecutionTime": null,
+    "lastPromptId": null,
+    "executionCount": 0,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 35,
     "cancelled": false
   }
 }

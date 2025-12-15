@@ -145,7 +145,9 @@ def execute_workflow(
             update_state_callback(workflow_id, {
                 "isRunning": True,
                 "lastExecutionTime": datetime.utcnow().isoformat() + 'Z',
-                "cancelled": False  # Clear cancelled flag when starting execution
+                "cancelled": False,  # Clear cancelled flag when starting execution
+                "executionPhase": "generating_prompts",  # Phase 1: OpenAI prompt generation
+                "executionProgress": 0
             })
         
         if is_image_to_video:
@@ -220,8 +222,21 @@ def _execute_text_to_video_workflow(
         try:
             from main import _get_relevant_prompts, _save_prompt_history
             
+            # Update state: Phase 1 - Generating prompts with OpenAI
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionPhase": "generating_prompts",
+                    "executionProgress": 10
+                })
+            
             # Get relevant prompts and summaries from memory using embeddings
             previous_prompts, previous_summaries = _get_relevant_prompts(workflow_id, concept, limit=5)
+            
+            # Update progress: Analyzing previous prompts
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionProgress": 20
+                })
             
             # Get prompts from AI agent (with memory context - prefer summaries if available)
             prompts = generate_prompts(
@@ -232,11 +247,34 @@ def _execute_text_to_video_workflow(
                 user_id=user_id
             )
             
+            # Update progress: Prompts generated
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionProgress": 30
+                })
+            
             # Save new prompts to history
             _save_prompt_history(workflow_id, prompts, concept)
+            
+            # Update state: Phase 2 - Starting ComfyUI execution
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionPhase": "executing_comfyui",
+                    "executionProgress": 35
+                })
         except ImportError:
             # Fallback if import fails (shouldn't happen in normal operation)
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionPhase": "generating_prompts",
+                    "executionProgress": 10
+                })
             prompts = generate_prompts(concept, numberOfClips, user_id=user_id)
+            if update_state_callback:
+                update_state_callback(workflow_id, {
+                    "executionPhase": "executing_comfyui",
+                    "executionProgress": 35
+                })
         
         if numberOfClips == 1:
             # Single clip workflow - use existing flow
@@ -351,14 +389,23 @@ def _execute_single_text_to_video_clip(
         
         prompt_id = result.get('prompt_id')
         
-        # Update state with prompt_id
+        # Update state with prompt_id and progress
         if update_state_callback:
             update_state_callback(workflow_id, {
-                "lastPromptId": prompt_id
+                "lastPromptId": prompt_id,
+                "executionPhase": "executing_comfyui",
+                "executionProgress": 40  # Workflow queued in ComfyUI
             })
         
-        # Poll for completion (with cancellation check)
-        _poll_for_completion(prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
+        # Poll for completion (with cancellation check and progress updates)
+        _poll_for_completion(
+            prompt_id, 
+            comfyui_url, 
+            timeout=600, 
+            workflow_id=workflow_id, 
+            get_state_callback=get_state_callback,
+            update_state_callback=update_state_callback
+        )  # 10 minutes for video
         
         # Check for cancellation after polling
         if _check_cancellation(workflow_id, get_state_callback):
@@ -507,8 +554,15 @@ def _execute_multi_clip_text_to_video(
                     "lastPromptId": prompt_id
                 })
             
-            # Poll for completion (with cancellation check)
-            _poll_for_completion(prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
+            # Poll for completion (with cancellation check and progress updates)
+            _poll_for_completion(
+                prompt_id, 
+                comfyui_url, 
+                timeout=600, 
+                workflow_id=workflow_id, 
+                get_state_callback=get_state_callback,
+                update_state_callback=update_state_callback
+            )  # 10 minutes for video
             
             # Check for cancellation after polling
             if _check_cancellation(workflow_id, get_state_callback):
@@ -695,8 +749,22 @@ def _execute_single_image_to_video_clip(
         
         image_prompt_id = result.get('prompt_id')
         
-        # Poll for image completion (with cancellation check)
-        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 5 minutes for image
+        # Update progress: Image generation queued
+        if update_state_callback:
+            update_state_callback(workflow_id, {
+                "executionPhase": "executing_comfyui",
+                "executionProgress": 40
+            })
+        
+        # Poll for image completion (with cancellation check and progress updates)
+        _poll_for_completion(
+            image_prompt_id, 
+            comfyui_url, 
+            timeout=300, 
+            workflow_id=workflow_id, 
+            get_state_callback=get_state_callback,
+            update_state_callback=update_state_callback
+        )  # 5 minutes for image
         
         # Check for cancellation after polling
         if _check_cancellation(workflow_id, get_state_callback):
@@ -802,14 +870,23 @@ def _execute_single_image_to_video_clip(
         
         video_prompt_id = video_result.get('prompt_id')
         
-        # Update state with prompt_id
+        # Update state with prompt_id and progress
         if update_state_callback:
             update_state_callback(workflow_id, {
-                "lastPromptId": video_prompt_id
+                "lastPromptId": video_prompt_id,
+                "executionPhase": "executing_comfyui",
+                "executionProgress": 40  # Workflow queued in ComfyUI
             })
         
-        # Poll for video completion (with cancellation check)
-        _poll_for_completion(video_prompt_id, comfyui_url, timeout=600, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 10 minutes for video
+        # Poll for video completion (with cancellation check and progress updates)
+        _poll_for_completion(
+            video_prompt_id, 
+            comfyui_url, 
+            timeout=600, 
+            workflow_id=workflow_id, 
+            get_state_callback=get_state_callback,
+            update_state_callback=update_state_callback
+        )  # 10 minutes for video
         
         # Get result and copy to output folder if specified
         if output_folder:
@@ -899,8 +976,22 @@ def _execute_multi_clip_image_to_video(
         
         image_prompt_id = result.get('prompt_id')
         
-        # Poll for image completion (with cancellation check)
-        _poll_for_completion(image_prompt_id, comfyui_url, timeout=300, workflow_id=workflow_id, get_state_callback=get_state_callback)  # 5 minutes for image
+        # Update progress: Image generation queued
+        if update_state_callback:
+            update_state_callback(workflow_id, {
+                "executionPhase": "executing_comfyui",
+                "executionProgress": 40
+            })
+        
+        # Poll for image completion (with cancellation check and progress updates)
+        _poll_for_completion(
+            image_prompt_id, 
+            comfyui_url, 
+            timeout=300, 
+            workflow_id=workflow_id, 
+            get_state_callback=get_state_callback,
+            update_state_callback=update_state_callback
+        )  # 5 minutes for image
         
         # Check for cancellation after polling
         if _check_cancellation(workflow_id, get_state_callback):
@@ -994,14 +1085,23 @@ def _execute_multi_clip_image_to_video(
             
             video_prompt_id = video_result.get('prompt_id')
             
-            # Update state with prompt_id
+            # Update state with prompt_id and progress
             if update_state_callback:
                 update_state_callback(workflow_id, {
-                    "lastPromptId": video_prompt_id
+                    "lastPromptId": video_prompt_id,
+                    "executionPhase": "executing_comfyui",
+                    "executionProgress": 40  # Workflow queued in ComfyUI
                 })
             
-            # Poll for video completion
-            _poll_for_completion(video_prompt_id, comfyui_url, timeout=600)  # 10 minutes for video
+            # Poll for video completion (with progress updates)
+            _poll_for_completion(
+                video_prompt_id, 
+                comfyui_url, 
+                timeout=600,
+                workflow_id=workflow_id,
+                get_state_callback=get_state_callback,
+                update_state_callback=update_state_callback
+            )  # 10 minutes for video
             
             # Download the generated video to temp directory
             clip_path = _download_clip_to_temp(
@@ -1225,7 +1325,8 @@ def _poll_for_completion(
     comfyui_url: str, 
     timeout: int = 300, 
     workflow_id: Optional[str] = None,
-    get_state_callback=None
+    get_state_callback=None,
+    update_state_callback=None
 ) -> None:
     """
     Poll ComfyUI for workflow completion.
@@ -1269,6 +1370,28 @@ def _poll_for_completion(
                 result = response.json()
                 if result.get('success'):
                     status = result.get('status')
+                    progress = result.get('progress', 0)
+                    
+                    # Update progress in workflow state - simplified approach
+                    # We'll just track that we're in ComfyUI phase, without trying to get exact progress
+                    if update_state_callback and workflow_id:
+                        # Keep progress at a fixed value during ComfyUI execution
+                        # The frontend will show the status text instead of progress bar
+                        if status == 'pending':
+                            mapped_progress = 40
+                        elif status == 'running':
+                            # Keep at 40% - we'll show status text instead of progress
+                            mapped_progress = 40
+                        elif status == 'completed':
+                            mapped_progress = 95
+                        else:
+                            mapped_progress = 40
+                        
+                        # Always update to ensure frontend gets status updates
+                        update_state_callback(workflow_id, {
+                            "executionPhase": "executing_comfyui",
+                            "executionProgress": mapped_progress
+                        })
                     
                     # Log status changes
                     if status != last_status:
@@ -1277,6 +1400,11 @@ def _poll_for_completion(
                     
                     if status == 'completed':
                         print(f"ComfyUI execution completed for prompt {prompt_id}")
+                        # Update to 100% on completion
+                        if update_state_callback and workflow_id:
+                            update_state_callback(workflow_id, {
+                                "executionProgress": 100
+                            })
                         return  # Success - ComfyUI has finished execution
                     elif status == 'error':
                         error_msg = result.get('message', 'Unknown error')

@@ -78,33 +78,134 @@ async def lifespan(app: FastAPI):
     """Initialize and cleanup workflow scheduler"""
     try:
         # Startup
-        # Note: Scheduler callbacks will need to be updated per-user context
-        # For now, scheduler will be disabled or will need user context passed
+        # Scheduler callbacks that handle user-scoped workflows
         def get_workflows():
-            # This is a placeholder - scheduler needs to be updated per-user
-            return []
+            """Get all active workflows from state files and cache, with user_id attached"""
+            all_workflows = []
+            
+            # First, scan all workflow state files to find active workflows
+            # This ensures we find workflows even if cache is empty
+            data_dir = DATA_DIR
+            state_files = []
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    if filename.startswith('workflow_state_') and filename.endswith('.json'):
+                        state_files.append(os.path.join(data_dir, filename))
+            
+            active_workflow_ids_by_user = {}  # {user_id: [workflow_ids]}
+            
+            for state_file in state_files:
+                try:
+                    # Extract user_id from filename: workflow_state_{user_id}.json
+                    filename = os.path.basename(state_file)
+                    if filename.startswith('workflow_state_') and filename.endswith('.json'):
+                        user_id = filename[len('workflow_state_'):-len('.json')]
+                        
+                        # Read state file
+                        states = _read_json(state_file, {})
+                        
+                        # Find active workflows
+                        for workflow_id, state in states.items():
+                            if state.get('isActive', False) and not state.get('isRunning', False) and not state.get('cancelled', False):
+                                if user_id not in active_workflow_ids_by_user:
+                                    active_workflow_ids_by_user[user_id] = []
+                                active_workflow_ids_by_user[user_id].append(workflow_id)
+                except Exception as e:
+                    logger.warning(f"Error reading state file {state_file}: {e}")
+            
+            # Now get workflow data from cache (workflows must be synced to cache for execution)
+            for user_id, workflow_ids in active_workflow_ids_by_user.items():
+                # Get workflows from cache - this is the source of truth for workflow configuration
+                cached_workflows = _workflows_cache.get(user_id, [])
+                cached_workflow_dict = {w.get('id'): w for w in cached_workflows}
+                
+                for workflow_id in workflow_ids:
+                    # Get workflow from cache
+                    workflow = cached_workflow_dict.get(workflow_id)
+                    
+                    if workflow:
+                        # Verify workflow has required fields
+                        if workflow.get('concept') and workflow.get('videoWorkflowFile'):
+                            workflow_with_user = workflow.copy()
+                            workflow_with_user['_scheduler_user_id'] = user_id
+                            all_workflows.append(workflow_with_user)
+                        else:
+                            logger.warning(f"Active workflow {workflow_id} (user {user_id}) missing required fields (concept or videoWorkflowFile)")
+                    else:
+                        logger.warning(f"Active workflow {workflow_id} (user {user_id}) not found in cache - workflows must be synced via /workflows/sync")
+            
+            if all_workflows:
+                logger.debug(f"Scheduler found {len(all_workflows)} active workflow(s) to check")
+            return all_workflows
         
         def get_state(workflow_id: str):
-            # This is a placeholder - scheduler needs to be updated per-user
-            return {"isActive": False, "isRunning": False}
+            """Get workflow state - extract user_id from workflow if available"""
+            # This is called by scheduler with workflow_id, but we need user_id
+            # We need to find the user_id by searching through all users' workflows and state files
+            # First try cache
+            for user_id, workflows in _workflows_cache.items():
+                for workflow in workflows:
+                    if workflow.get('id') == workflow_id:
+                        state = _get_workflow_state(user_id, workflow_id)
+                        return state
+            
+            # If not in cache, scan state files to find user_id
+            data_dir = DATA_DIR
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    if filename.startswith('workflow_state_') and filename.endswith('.json'):
+                        user_id = filename[len('workflow_state_'):-len('.json')]
+                        state = _get_workflow_state(user_id, workflow_id)
+                        # Check if this workflow exists in this user's state
+                        if state.get('isActive') is not None or state.get('lastExecutionTime') is not None:
+                            return state
+            
+            # If not found, return default state
+            return {"isActive": False, "isRunning": False, "nextExecutionTime": None}
         
         def update_state(workflow_id: str, updates: dict):
-            # This is a placeholder - scheduler needs to be updated per-user
-            pass
+            """Update workflow state - find user_id from workflow cache"""
+            # Find which user owns this workflow
+            for user_id, workflows in _workflows_cache.items():
+                for workflow in workflows:
+                    if workflow.get('id') == workflow_id:
+                        _update_workflow_state(user_id, workflow_id, updates)
+                        return
+            # If workflow not found, log warning but don't fail
+            logger.warning(f"Could not find user for workflow {workflow_id} when updating state")
         
-        def exec_workflow(workflow: dict, workflow_id: str, user_id: str = None):
+        def exec_workflow(workflow: dict, workflow_id: str):
             """Execute workflow with current ComfyUI settings"""
+            # Extract user_id from workflow (set by get_workflows)
+            user_id = workflow.get('_scheduler_user_id')
+            if not user_id:
+                # Fallback: try to find user_id from workflow's userId field
+                user_id = workflow.get('userId')
+            
+            if not user_id:
+                logger.error(f"Cannot execute workflow {workflow_id}: no user_id found")
+                return {"success": False, "error": "User ID not found"}
+            
             prefs = _read_json(PREFERENCES_PATH, {})
             comfyui_url = prefs.get('comfyUiServer', 'http://127.0.0.1:8188')
             comfyui_path = prefs.get('comfyuiPath')
             output_folder = prefs.get('aiWorkflowsOutputFolder')
+            
+            # Create callbacks that include user_id
+            def update_state_cb(wf_id: str, updates: dict):
+                _update_workflow_state(user_id, wf_id, updates)
+            
+            def get_state_cb(wf_id: str):
+                return _get_workflow_state(user_id, wf_id)
+            
             return execute_workflow(
                 workflow=workflow,
                 workflow_id=workflow_id,
                 comfyui_url=comfyui_url,
                 comfyui_path=comfyui_path,
                 output_folder=output_folder,
-                update_state_callback=update_state,
+                update_state_callback=update_state_cb,
+                get_state_callback=get_state_cb,
                 user_id=user_id
             )
         
@@ -174,6 +275,9 @@ logging.basicConfig(
 logging.getLogger("ai_agent").setLevel(logging.DEBUG)
 logging.getLogger("workflow_executor").setLevel(logging.DEBUG)
 logging.getLogger("workflow_scheduler").setLevel(logging.DEBUG)
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
 
 
 def _read_json(path: str, default):
@@ -316,7 +420,9 @@ def _get_workflow_state(user_id: str, workflow_id: str) -> dict:
             "lastExecutionTime": None,
             "nextExecutionTime": None,
             "lastPromptId": None,
-            "executionCount": 0
+            "executionCount": 0,
+            "executionPhase": None,  # "generating_prompts" or "executing_comfyui"
+            "executionProgress": 0  # 0-100 percentage
         }
         _write_json(state_path, state)
     return state[workflow_id]
@@ -1088,15 +1194,28 @@ def get_generation_status(prompt_id: str, comfyui_url: str = Query(default="http
         client = ComfyUIClient(comfyui_url)
         progress_info = client.get_prompt_progress(prompt_id)
         
+        # Ensure progress_info is not None and is a dict
+        if not progress_info or not isinstance(progress_info, dict):
+            return {
+                'success': False,
+                'prompt_id': prompt_id,
+                'status': 'error',
+                'progress': 0,
+                'message': 'Failed to get progress information'
+            }
+        
         return {
             'success': True,
             'prompt_id': prompt_id,
-            'status': progress_info['status'],
+            'status': progress_info.get('status', 'unknown'),
             'progress': progress_info.get('progress', 0),
-            'message': progress_info['message']
+            'message': progress_info.get('message', 'Unknown status')
         }
         
     except Exception as e:
+        import traceback
+        logger.error(f"Error checking status for prompt {prompt_id}: {e}")
+        logger.error(traceback.format_exc())
         return {
             'success': False,
             'prompt_id': prompt_id,
@@ -1694,10 +1813,17 @@ def deactivate_workflow(workflow_id: str, request: Request):
 
 
 @app.post('/workflows/{workflow_id}/cancel')
-def cancel_workflow(workflow_id: str):
+def cancel_workflow(workflow_id: str, request: Request):
     """Cancel a currently running workflow execution"""
     try:
-        state = _get_workflow_state(workflow_id)
+        user_id = _get_user_id_from_request(request)
+        if not user_id:
+            return {
+                "success": False,
+                "error": "User ID required"
+            }
+        
+        state = _get_workflow_state(user_id, workflow_id)
         
         if not state.get('isRunning', False):
             return {

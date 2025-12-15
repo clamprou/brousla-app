@@ -162,8 +162,8 @@ export default function AIWorkflows() {
 
     window.addEventListener('workflowsUpdated', handleWorkflowsUpdate)
     
-    // Poll workflow states every 5 seconds
-    const statePollInterval = setInterval(loadWorkflowStates, 5000)
+    // Poll workflow states every 2 seconds (more frequent for real-time progress updates)
+    const statePollInterval = setInterval(loadWorkflowStates, 2000)
     
     return () => {
       window.removeEventListener('workflowsUpdated', handleWorkflowsUpdate)
@@ -247,7 +247,9 @@ export default function AIWorkflows() {
   const getWorkflowState = (workflowId) => {
     return workflowStates[workflowId] || {
       isActive: false,
-      isRunning: false
+      isRunning: false,
+      executionPhase: null,
+      executionProgress: 0
     }
   }
 
@@ -376,6 +378,8 @@ export default function AIWorkflows() {
               const state = getWorkflowState(workflow.id)
               const isActive = state.isActive
               const isRunning = state.isRunning
+              const executionPhase = state.executionPhase || null
+              const executionProgress = state.executionProgress || 0
               
               // Determine card styling based on state
               let cardClasses = 'bg-gray-800 border rounded-lg p-5 hover:bg-gray-750 transition-colors relative'
@@ -390,12 +394,25 @@ export default function AIWorkflows() {
                 cardClasses += ' border-gray-700'
               }
               
+              // Get phase display text
+              const getPhaseText = () => {
+                if (executionPhase === 'generating_prompts') {
+                  return 'Generating prompts with AI...'
+                } else if (executionPhase === 'executing_comfyui') {
+                  return 'Executing in ComfyUI...'
+                }
+                return 'Running...'
+              }
+              
               return (
               <div key={workflow.id} className={cardClasses}>
                 {/* Loading overlay for running state */}
                 {isRunning && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-600/10 rounded-lg z-10">
-                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin mb-2" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-600/10 rounded-lg z-10 p-6">
+                    <Loader2 className="h-8 w-8 text-blue-400 animate-spin mb-3" />
+                    <div className="text-center mb-4 w-full max-w-xs">
+                      <p className="text-sm font-medium text-blue-300">{getPhaseText()}</p>
+                    </div>
                     <button
                       onClick={() => handleCancelWorkflow(workflow.id)}
                       disabled={cancellingWorkflow === workflow.id}
