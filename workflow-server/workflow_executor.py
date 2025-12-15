@@ -165,7 +165,8 @@ def execute_workflow(
                 numberOfClips=numberOfClips,
                 advanced_settings=advanced_settings,
                 update_state_callback=update_state_callback,
-                get_state_callback=get_state_callback
+                get_state_callback=get_state_callback,
+                user_id=user_id
             )
         else:
             # Text-to-video workflow
@@ -180,7 +181,8 @@ def execute_workflow(
                 numberOfClips=numberOfClips,
                 advanced_settings=advanced_settings,
                 update_state_callback=update_state_callback,
-                get_state_callback=get_state_callback
+                get_state_callback=get_state_callback,
+                user_id=user_id
             )
     
     except Exception as e:
@@ -209,7 +211,8 @@ def _execute_text_to_video_workflow(
     numberOfClips: int = 1,
     advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
-    get_state_callback=None
+    get_state_callback=None,
+    user_id: Optional[str] = None
 ) -> Dict:
     """Execute a text-to-video workflow"""
     try:
@@ -385,9 +388,10 @@ def _execute_single_text_to_video_clip(
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
             # Get current execution count and increment
-            from main import _get_workflow_state
-            current_state = _get_workflow_state(workflow_id)
-            current_count = current_state.get('executionCount', 0)
+            current_count = 0
+            if get_state_callback:
+                current_state = get_state_callback(workflow_id)
+                current_count = current_state.get('executionCount', 0)
             
             update_state_callback(workflow_id, {
                 "isRunning": False,
@@ -546,9 +550,10 @@ def _execute_multi_clip_text_to_video(
         # Update state after completion
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
-            from main import _get_workflow_state
-            current_state = _get_workflow_state(workflow_id)
-            current_count = current_state.get('executionCount', 0)
+            current_count = 0
+            if get_state_callback:
+                current_state = get_state_callback(workflow_id)
+                current_count = current_state.get('executionCount', 0)
             
             update_state_callback(workflow_id, {
                 "isRunning": False,
@@ -586,7 +591,8 @@ def _execute_image_to_video_workflow(
     numberOfClips: int = 1,
     advanced_settings: Optional[Dict] = None,
     update_state_callback=None,
-    get_state_callback=None
+    get_state_callback=None,
+    user_id: Optional[str] = None
 ) -> Dict:
     """Execute an image-to-video workflow (generate image first, then video)"""
     try:
@@ -819,9 +825,10 @@ def _execute_single_image_to_video_clip(
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
             # Get current execution count and increment
-            from main import _get_workflow_state
-            current_state = _get_workflow_state(workflow_id)
-            current_count = current_state.get('executionCount', 0)
+            current_count = 0
+            if get_state_callback:
+                current_state = get_state_callback(workflow_id)
+                current_count = current_state.get('executionCount', 0)
             
             update_state_callback(workflow_id, {
                 "isRunning": False,
@@ -1027,9 +1034,10 @@ def _execute_multi_clip_image_to_video(
         # Update state after completion
         next_execution = datetime.utcnow() + timedelta(minutes=schedule_minutes)
         if update_state_callback:
-            from main import _get_workflow_state
-            current_state = _get_workflow_state(workflow_id)
-            current_count = current_state.get('executionCount', 0)
+            current_count = 0
+            if get_state_callback:
+                current_state = get_state_callback(workflow_id)
+                current_count = current_state.get('executionCount', 0)
             
             update_state_callback(workflow_id, {
                 "isRunning": False,
