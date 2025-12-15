@@ -114,8 +114,14 @@ export default function Profile() {
     setIsCreatingCheckout(true)
     try {
       const result = await createCheckoutSession(token, plan)
-      // Redirect to Stripe checkout
-      window.location.href = result.checkout_url
+      // Open Stripe checkout in external browser
+      if (window.electronAPI && window.electronAPI.openExternal) {
+        await window.electronAPI.openExternal(result.checkout_url)
+      } else {
+        // Fallback for browser environment
+        window.location.href = result.checkout_url
+      }
+      setIsCreatingCheckout(false)
     } catch (err) {
       setError(err.message || 'Failed to create checkout session')
       setIsCreatingCheckout(false)
