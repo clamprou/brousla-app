@@ -87,8 +87,77 @@ class WorkflowScheduler:
                 # Get workflow state
                 state = self.get_workflow_state(workflow_id)
                 
+                # #region agent log
+                import json
+                import requests
+                log_data = {
+                    "location": "workflow_scheduler.py:88",
+                    "message": "Scheduler checking workflow state",
+                    "data": {
+                        "workflowId": workflow_id,
+                        "isActive": state.get('isActive', False),
+                        "isRunning": state.get('isRunning', False),
+                        "cancelled": state.get('cancelled', False),
+                        "nextExecutionTime": state.get('nextExecutionTime')
+                    },
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "A"
+                }
+                try:
+                    requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
+                except:
+                    pass
+                # #endregion
+                
                 # Skip if not active, already running, or cancelled
-                if not state.get('isActive', False) or state.get('isRunning', False) or state.get('cancelled', False):
+                is_active = state.get('isActive', False)
+                is_running = state.get('isRunning', False)
+                is_cancelled = state.get('cancelled', False)
+                
+                # #region agent log
+                log_data = {
+                    "location": "workflow_scheduler.py:91",
+                    "message": "Scheduler skip check",
+                    "data": {
+                        "workflowId": workflow_id,
+                        "isActive": is_active,
+                        "isRunning": is_running,
+                        "isCancelled": is_cancelled,
+                        "willSkip": not is_active or is_running or is_cancelled
+                    },
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "A"
+                }
+                try:
+                    requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
+                except:
+                    pass
+                # #endregion
+                
+                if not is_active or is_running or is_cancelled:
+                    # #region agent log
+                    reason = 'cancelled' if is_cancelled else ('running' if is_running else 'not_active')
+                    log_data = {
+                        "location": "workflow_scheduler.py:96",
+                        "message": "Scheduler skipping workflow",
+                        "data": {
+                            "workflowId": workflow_id,
+                            "reason": reason
+                        },
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "sessionId": "debug-session",
+                        "runId": "pre-fix",
+                        "hypothesisId": "A"
+                    }
+                    try:
+                        requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
+                    except:
+                        pass
+                    # #endregion
                     continue
                 
                 # Check if it's time to execute
@@ -107,6 +176,30 @@ class WorkflowScheduler:
                         # Invalid date format - skip this execution, let it be handled by activation
                         should_execute = False
                 # If nextExecutionTime is None, don't execute here - it's being handled by activation
+                
+                # #region agent log
+                log_data = {
+                    "location": "workflow_scheduler.py:111",
+                    "message": "Scheduler execution decision",
+                    "data": {
+                        "workflowId": workflow_id,
+                        "shouldExecute": should_execute,
+                        "nextExecutionTime": next_execution,
+                        "currentTime": current_time.isoformat(),
+                        "isActive": is_active,
+                        "isRunning": is_running,
+                        "isCancelled": is_cancelled
+                    },
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "A"
+                }
+                try:
+                    requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
+                except:
+                    pass
+                # #endregion
                 
                 if should_execute:
                     print(f"[SCHEDULER] Executing scheduled workflow: {workflow_id} ({workflow.get('name', 'Unnamed')}) - nextExecutionTime was {next_execution}")

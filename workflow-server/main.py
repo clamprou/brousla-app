@@ -1937,6 +1937,29 @@ def cancel_workflow(workflow_id: str, request: Request):
         next_execution = (datetime.utcnow() + timedelta(minutes=schedule_minutes)).isoformat() + 'Z'
         
         # Set cancellation flag, stop running, and set next execution time
+        # #region agent log
+        log_data = {
+            "location": "main.py:1940",
+            "message": "Cancelling workflow - setting state",
+            "data": {
+                "workflowId": workflow_id,
+                "userId": user_id,
+                "isRunning": False,
+                "cancelled": True,
+                "nextExecutionTime": next_execution,
+                "scheduleMinutes": schedule_minutes
+            },
+            "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            "sessionId": "debug-session",
+            "runId": "pre-fix",
+            "hypothesisId": "A"
+        }
+        try:
+            requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
+        except:
+            pass
+        # #endregion
+        
         _update_workflow_state(user_id, workflow_id, {
             "isRunning": False,
             "cancelled": True,
