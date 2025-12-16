@@ -86,7 +86,7 @@
     "cancelled": false
   },
   "1765897664868": {
-    "isActive": true,
+    "isActive": false,
     "isRunning": false,
     "lastExecutionTime": "2025-12-16T15:07:48.692009Z",
     "nextExecutionTime": "2025-12-16T15:19:53.466866Z",
@@ -95,5 +95,37 @@
     "executionPhase": "generating_prompts",
     "executionProgress": 30,
     "cancelled": false
+  },
+  "1765898377411": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-16T15:33:38.959012Z",
+    "nextExecutionTime": "2025-12-16T15:46:26.034702Z",
+    "lastPromptId": "144c7f7c-b079-4767-9c60-0c17d069cae1",
+    "executionCount": 1,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 40,
+    "cancelled": true
+  },
+  "1765912846641": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": null,
+    "nextExecutionTime": "2025-12-16T19:32:17.462831Z",
+    "lastPromptId": null,
+    "executionCount": 0,
+    "executionPhase": null,
+    "executionProgress": 0
+  },
+  "1765912981038": {
+    "isActive": true,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-16T19:23:04.811667Z",
+    "nextExecutionTime": "2025-12-16T19:33:42.140290Z",
+    "lastPromptId": "aa33fc9e-6869-4b18-905f-8c818089fcaf",
+    "executionCount": 0,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 40,
+    "cancelled": true
   }
 }

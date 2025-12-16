@@ -60,7 +60,8 @@ venv/
 server/outputs/
 server/data/*.json
 !server/data/.gitkeep
-
+workflow-server/data/
+!workflow-server/data/.gitkeep
 # Models and large assets (keep placeholders only)
 models/*.bin
 models/*.safetensors
