@@ -53,7 +53,7 @@
     "cancelled": false
   },
   "1765828864538": {
-    "isActive": true,
+    "isActive": false,
     "isRunning": false,
     "lastExecutionTime": "2025-12-15T20:01:10.895463Z",
     "nextExecutionTime": null,
@@ -61,6 +61,17 @@
     "executionCount": 0,
     "executionPhase": "executing_comfyui",
     "executionProgress": 35,
+    "cancelled": false
+  },
+  "1765829066806": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-15T21:02:33.972745Z",
+    "nextExecutionTime": "2025-12-15T21:22:06.762773Z",
+    "lastPromptId": "ef986d55-e041-4f61-a61e-149adeb5ef47",
+    "executionCount": 1,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 100,
     "cancelled": false
   }
 }

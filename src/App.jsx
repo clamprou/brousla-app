@@ -26,14 +26,22 @@ export default function App() {
   const previousActiveKeyRef = React.useRef('text-to-image')
   
   // Check if we're on email confirmation page
+  // Support both pathname routing (dev) and hash routing (production)
   const isEmailConfirmation = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
-    return window.location.pathname === '/email-confirmation' || params.has('token')
+    const hashParams = window.location.hash ? new URLSearchParams(window.location.hash.split('?')[1] || '') : null
+    const hasToken = params.has('token') || (hashParams && hashParams.has('token'))
+    
+    return window.location.pathname === '/email-confirmation' || 
+           window.location.hash.startsWith('#/email-confirmation') ||
+           hasToken
   }, [])
 
   // Check if we're on Google OAuth callback page
+  // Support both pathname routing (dev) and hash routing (production)
   const [isGoogleOAuthCallback, setIsGoogleOAuthCallback] = useState(() => {
     return window.location.pathname === '/google-oauth-callback' || 
+           window.location.hash.startsWith('#/google-oauth-callback') ||
            window.location.href.includes('google-oauth-callback')
   })
 
@@ -41,18 +49,21 @@ export default function App() {
   useEffect(() => {
     const checkCallback = () => {
       const isCallback = window.location.pathname === '/google-oauth-callback' || 
+                        window.location.hash.startsWith('#/google-oauth-callback') ||
                         window.location.href.includes('google-oauth-callback')
       setIsGoogleOAuthCallback(isCallback)
     }
     
     checkCallback()
-    // Also listen for popstate events (back/forward navigation)
+    // Also listen for popstate events (back/forward navigation) and hash changes
     window.addEventListener('popstate', checkCallback)
+    window.addEventListener('hashchange', checkCallback)
     // Check periodically in case URL changes without events
     const interval = setInterval(checkCallback, 100)
     
     return () => {
       window.removeEventListener('popstate', checkCallback)
+      window.removeEventListener('hashchange', checkCallback)
       clearInterval(interval)
     }
   }, [])

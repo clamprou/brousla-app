@@ -9,9 +9,22 @@ export default function EmailConfirmation() {
   const [cooldownSeconds, setCooldownSeconds] = useState(0)
   const [isResending, setIsResending] = useState(false)
 
-  // Get parameters from URL query
+  // Get parameters from URL query (supports both search params and hash-based routing)
   const getParamsFromURL = () => {
-    const params = new URLSearchParams(window.location.search)
+    // Check both window.location.search (dev mode) and hash (production mode)
+    let params = new URLSearchParams(window.location.search)
+    
+    // If hash contains query params (production mode with hash routing)
+    if (window.location.hash && window.location.hash.includes('?')) {
+      const hashQuery = window.location.hash.split('?')[1]
+      const hashParams = new URLSearchParams(hashQuery)
+      // Merge hash params, with hash params taking precedence
+      params = new URLSearchParams({
+        ...Object.fromEntries(params),
+        ...Object.fromEntries(hashParams)
+      })
+    }
+    
     return {
       token: params.get('token'),
       status: params.get('status'),

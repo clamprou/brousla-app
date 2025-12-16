@@ -104,35 +104,104 @@ async def lifespan(app: FastAPI):
                         # Read state file
                         states = _read_json(state_file, {})
                         
-                        # Find active workflows
+                        # Find active workflows and store their state for later use
                         for workflow_id, state in states.items():
                             if state.get('isActive', False) and not state.get('isRunning', False) and not state.get('cancelled', False):
-                                if user_id not in active_workflow_ids_by_user:
-                                    active_workflow_ids_by_user[user_id] = []
-                                active_workflow_ids_by_user[user_id].append(workflow_id)
+                                next_execution = state.get('nextExecutionTime')
+                                # Only include workflows that are scheduled (have nextExecutionTime set)
+                                # Skip workflows with nextExecutionTime=None as they're handled by activation endpoint, not scheduler
+                                if next_execution is not None:
+                                    if user_id not in active_workflow_ids_by_user:
+                                        active_workflow_ids_by_user[user_id] = []
+                                    # Store workflow_id with its state for later reference
+                                    active_workflow_ids_by_user[user_id].append((workflow_id, state))
                 except Exception as e:
                     logger.warning(f"Error reading state file {state_file}: {e}")
             
-            # Now get workflow data from cache (workflows must be synced to cache for execution)
-            for user_id, workflow_ids in active_workflow_ids_by_user.items():
+            # Now get workflow data from cache or stored workflows
+            for user_id, workflow_items in active_workflow_ids_by_user.items():
                 # Get workflows from cache - this is the source of truth for workflow configuration
                 cached_workflows = _workflows_cache.get(user_id, [])
                 cached_workflow_dict = {w.get('id'): w for w in cached_workflows}
                 
-                for workflow_id in workflow_ids:
+                for workflow_item in workflow_items:
+                    # Handle both tuple (workflow_id, state) and plain workflow_id for backward compatibility
+                    if isinstance(workflow_item, tuple):
+                        workflow_id, workflow_state = workflow_item
+                    else:
+                        workflow_id = workflow_item
+                        workflow_state = {}
                     # Get workflow from cache
                     workflow = cached_workflow_dict.get(workflow_id)
                     
+                    # If not in cache, try to load from stored workflows
+                    if not workflow:
+                        try:
+                            # Load workflow from stored workflows
+                            metadata = _get_stored_workflows_metadata(user_id)
+                            workflow_meta = next((w for w in metadata.get("workflows", []) if w.get("id") == workflow_id and w.get("userId") == user_id), None)
+                            
+                            if workflow_meta:
+                                # Load the actual workflow file
+                                workflow_path = _get_stored_workflow_file_path(user_id, workflow_id)
+                                if os.path.exists(workflow_path):
+                                    with open(workflow_path, 'r', encoding='utf-8') as f:
+                                        workflow_json = json.load(f)
+                                    
+                                    # Construct workflow object similar to what's in cache
+                                    # We need to reconstruct the workflow format that includes concept, videoWorkflowFile, etc.
+                                    # The workflow_executor requires: concept, videoWorkflowFile, schedule (optional, defaults to 60)
+                                    workflow = {
+                                        'id': workflow_id,
+                                        'name': workflow_meta.get('name', 'Unnamed'),
+                                        'userId': user_id,
+                                        'videoWorkflowFile': workflow_json,  # The actual workflow JSON
+                                        'concept': workflow_meta.get('name', '') or 'Workflow',  # Use name as concept
+                                        'schedule': 60,  # Default schedule (workflow_executor also defaults to 60)
+                                        'numberOfClips': 1  # Default to 1 clip
+                                    }
+                                    
+                                    # Add to cache for future use
+                                    if not any(w.get('id') == workflow_id for w in cached_workflows):
+                                        cached_workflows.append(workflow)
+                                        _set_workflows_cache(user_id, cached_workflows)
+                                        # Update cached_workflow_dict so it's available for subsequent iterations
+                                        cached_workflow_dict[workflow_id] = workflow
+                                    
+                                    logger.info(f"Loaded active workflow {workflow_id} (user {user_id}) from stored workflows")
+                                else:
+                                    logger.warning(f"Active workflow {workflow_id} (user {user_id}) found in metadata but file not found at {workflow_path}")
+                            else:
+                                # Workflow not in stored workflows - it may exist only in frontend localStorage
+                                # Log detailed info to help debug
+                                all_stored_ids = [w.get("id") for w in metadata.get("workflows", [])]
+                                logger.warning(
+                                    f"Active workflow {workflow_id} (user {user_id}) not found in cache or stored workflows. "
+                                    f"Stored workflow IDs: {all_stored_ids}. "
+                                    f"This workflow may exist only in frontend localStorage. "
+                                    f"Frontend should sync workflows to persist them."
+                                )
+                        except Exception as e:
+                            logger.warning(f"Error loading workflow {workflow_id} (user {user_id}) from stored workflows: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
                     if workflow:
                         # Verify workflow has required fields
-                        if workflow.get('concept') and workflow.get('videoWorkflowFile'):
+                        if workflow.get('videoWorkflowFile'):
                             workflow_with_user = workflow.copy()
                             workflow_with_user['_scheduler_user_id'] = user_id
+                            # Ensure concept exists (required by workflow executor)
+                            if not workflow_with_user.get('concept'):
+                                workflow_with_user['concept'] = workflow_with_user.get('name', 'Workflow')
+                            # Ensure schedule exists (default to 60 if not present)
+                            if not workflow_with_user.get('schedule'):
+                                workflow_with_user['schedule'] = 60
                             all_workflows.append(workflow_with_user)
                         else:
-                            logger.warning(f"Active workflow {workflow_id} (user {user_id}) missing required fields (concept or videoWorkflowFile)")
+                            logger.warning(f"Active workflow {workflow_id} (user {user_id}) missing required fields (videoWorkflowFile)")
                     else:
-                        logger.warning(f"Active workflow {workflow_id} (user {user_id}) not found in cache - workflows must be synced via /workflows/sync")
+                        logger.warning(f"Active workflow {workflow_id} (user {user_id}) could not be loaded")
             
             if all_workflows:
                 logger.debug(f"Scheduler found {len(all_workflows)} active workflow(s) to check")
@@ -164,13 +233,26 @@ async def lifespan(app: FastAPI):
             return {"isActive": False, "isRunning": False, "nextExecutionTime": None}
         
         def update_state(workflow_id: str, updates: dict):
-            """Update workflow state - find user_id from workflow cache"""
-            # Find which user owns this workflow
+            """Update workflow state - find user_id from workflow cache or state files"""
+            # Find which user owns this workflow - first try cache
             for user_id, workflows in _workflows_cache.items():
                 for workflow in workflows:
                     if workflow.get('id') == workflow_id:
                         _update_workflow_state(user_id, workflow_id, updates)
                         return
+            
+            # If not in cache, scan state files to find user_id
+            data_dir = DATA_DIR
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    if filename.startswith('workflow_state_') and filename.endswith('.json'):
+                        user_id = filename[len('workflow_state_'):-len('.json')]
+                        state = _get_workflow_state(user_id, workflow_id)
+                        # Check if this workflow exists in this user's state
+                        if state.get('isActive') is not None or state.get('lastExecutionTime') is not None:
+                            _update_workflow_state(user_id, workflow_id, updates)
+                            return
+            
             # If workflow not found, log warning but don't fail
             logger.warning(f"Could not find user for workflow {workflow_id} when updating state")
         
@@ -1590,14 +1672,24 @@ def mark_workflow_used(workflow_id: str, request: Request):
 # Workflow API Endpoints
 @app.post('/workflows/sync')
 def sync_workflows(request: Request, workflows: list = Body(...)):
-    """Sync workflow list from frontend for the current user"""
+    """Sync workflow list from frontend for the current user to in-memory cache only.
+    
+    NOTE: This endpoint does NOT auto-save workflow files to stored workflows.
+    Users must explicitly save workflow files using the "Save" button in WorkflowFileUpload component.
+    """
     user_id = _get_user_id_from_request(request)
     if not user_id:
         return {"ok": False, "error": "User ID required"}
     
     # Filter workflows to ensure they belong to the user
     user_workflows = [w for w in workflows if w.get("userId") == user_id]
+    
+    # Save to in-memory cache only
+    # NOTE: We do NOT auto-save workflow files to stored workflows here.
+    # Users must explicitly save workflow files using the "Save" button in WorkflowFileUpload component.
+    # Auto-saving was causing workflow files to be saved with AI workflow names instead of original filenames.
     _set_workflows_cache(user_id, user_workflows)
+    
     return {"ok": True, "count": len(user_workflows)}
 
 

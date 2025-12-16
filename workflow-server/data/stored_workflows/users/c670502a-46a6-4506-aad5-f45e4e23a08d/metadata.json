@@ -1,13 +1,13 @@
 {
   "workflows": [
     {
-      "id": "506ee9f690fc47e3bbe40e2bff080df2",
+      "id": "b53640f2107c4119a735083c3e604067",
       "name": "video_wan2_2_5B_ti2v (5)",
       "description": "",
       "filename": "video_wan2_2_5B_ti2v (5).json",
-      "uploadDate": "2025-12-12T16:52:37.980129Z",
-      "lastUsed": "2025-12-15T20:01:03.473589Z",
-      "fileSize": 2334,
+      "uploadDate": "2025-12-16T13:29:51.518604Z",
+      "lastUsed": null,
+      "fileSize": 2333,
       "userId": "c670502a-46a6-4506-aad5-f45e4e23a08d"
     }
   ]

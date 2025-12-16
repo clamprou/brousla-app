@@ -146,20 +146,25 @@ function handleProtocolUrl(url) {
   
   // Handle email confirmation
   if (pathPart === 'email-confirmation') {
-    // Navigate to email confirmation page with the params
-    const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
     const queryString = queryPart ? `?${queryPart}` : ''
-    const targetUrl = `http://localhost:${devServerPort}/email-confirmation${queryString}`
     
     // Small delay to ensure window is ready
     setTimeout(() => {
       if (mainWindow) {
         if (getIsDev()) {
+          // In development, use dev server URL
+          const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
+          const targetUrl = `http://localhost:${devServerPort}/email-confirmation${queryString}`
           mainWindow.loadURL(targetUrl)
         } else {
-          // In production, navigate to the page
+          // In production, use hash-based routing (works with file:// protocol)
+          // Escape the query string for use in JavaScript
+          const escapedQueryString = queryString.replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           mainWindow.webContents.executeJavaScript(`
-            window.location.href = '${targetUrl}';
+            // Set hash with route and query params
+            window.location.hash = '/email-confirmation${escapedQueryString}';
+            // Also dispatch a custom event to trigger React router if needed
+            window.dispatchEvent(new PopStateEvent('popstate'));
           `)
         }
       }
@@ -167,19 +172,25 @@ function handleProtocolUrl(url) {
   }
   // Handle Google OAuth callback
   else if (pathPart === 'google-oauth-callback') {
-    const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
     const queryString = queryPart ? `?${queryPart}` : ''
-    const targetUrl = `http://localhost:${devServerPort}/google-oauth-callback${queryString}`
     
     // Small delay to ensure window is ready
     setTimeout(() => {
       if (mainWindow) {
         if (getIsDev()) {
+          // In development, use dev server URL
+          const devServerPort = process.env.VITE_DEV_SERVER_PORT || '5173'
+          const targetUrl = `http://localhost:${devServerPort}/google-oauth-callback${queryString}`
           mainWindow.loadURL(targetUrl)
         } else {
-          // In production, navigate to the page
+          // In production, use hash-based routing (works with file:// protocol)
+          // Escape the query string for use in JavaScript
+          const escapedQueryString = queryString.replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r")
           mainWindow.webContents.executeJavaScript(`
-            window.location.href = '${targetUrl}';
+            // Set hash with route and query params
+            window.location.hash = '/google-oauth-callback${escapedQueryString}';
+            // Also dispatch a custom event to trigger React router if needed
+            window.dispatchEvent(new PopStateEvent('popstate'));
           `)
         }
       }

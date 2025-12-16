@@ -2,6 +2,7 @@ import React from 'react'
 import { Upload, FileText, AlertCircle, Save, Trash2, Clock, X } from 'lucide-react'
 import { getStoredWorkflows, loadStoredWorkflow, deleteStoredWorkflow, markWorkflowUsed, saveWorkflow } from '../utils/workflowStorage.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import ConfirmationModal from './ConfirmationModal.jsx'
 
 export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI Workflow" }) {
   const { userId } = useAuth()
@@ -15,6 +16,7 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
   const [saveName, setSaveName] = React.useState('')
   const [saveDescription, setSaveDescription] = React.useState('')
   const [isSaving, setIsSaving] = React.useState(false)
+  const [deleteModal, setDeleteModal] = React.useState({ isOpen: false, workflowId: null, workflowName: '' })
 
   const processFile = async (file) => {
     if (!file) return
@@ -169,11 +171,17 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
     }
   }
 
-  const handleDeleteStoredWorkflow = async (workflowId, e) => {
+  const handleDeleteStoredWorkflow = (workflowId, workflowName, e) => {
     e.stopPropagation()
-    if (!userId || !confirm('Are you sure you want to delete this workflow?')) {
-      return
-    }
+    if (!userId) return
+    setDeleteModal({ isOpen: true, workflowId, workflowName })
+  }
+
+  const confirmDeleteStoredWorkflow = async () => {
+    const { workflowId } = deleteModal
+    if (!workflowId || !userId) return
+    
+    setDeleteModal({ isOpen: false, workflowId: null, workflowName: '' })
     
     try {
       const success = await deleteStoredWorkflow(workflowId, userId)
@@ -190,6 +198,10 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
       console.error('Error deleting workflow:', error)
       setError('Failed to delete workflow')
     }
+  }
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, workflowId: null, workflowName: '' })
   }
 
   const handleSaveClick = () => {
@@ -305,7 +317,7 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
                 <div className="flex items-center gap-1 ml-2">
                   <button
                     type="button"
-                    onClick={(e) => handleDeleteStoredWorkflow(workflow.id, e)}
+                    onClick={(e) => handleDeleteStoredWorkflow(workflow.id, workflow.name, e)}
                     className="p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                     title="Delete workflow"
                   >
@@ -480,6 +492,18 @@ export default function WorkflowFileUpload({ value, onChange, label = "ComfyUI W
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDeleteStoredWorkflow}
+        title="Delete Workflow"
+        message={`Are you sure you want to delete "${deleteModal.workflowName}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   )
 }

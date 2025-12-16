@@ -2,7 +2,7 @@
   "3": {
     "inputs": {
       "seed": 898471028164125,
-      "steps": 12,
+      "steps": 4,
       "cfg": 5,
       "sampler_name": "uni_pc",
       "scheduler": "simple",
