@@ -256,6 +256,21 @@ def _execute_text_to_video_workflow(
             # Save new prompts to history
             _save_prompt_history(workflow_id, prompts, concept)
             
+            # CRITICAL: Check for cancellation AFTER phase 1 completes but BEFORE phase 2 starts
+            # This prevents phase 2 (ComfyUI execution) from starting if user cancelled during phase 1
+            if _check_cancellation(workflow_id, get_state_callback):
+                if update_state_callback:
+                    update_state_callback(workflow_id, {
+                        "isRunning": False,
+                        "cancelled": False  # Clear cancelled flag
+                    })
+                return {
+                    "success": False,
+                    "error": "Workflow execution was cancelled during phase 1 (prompt generation)",
+                    "workflow_id": workflow_id,
+                    "cancelled": True
+                }
+            
             # Update state: Phase 2 - Starting ComfyUI execution
             if update_state_callback:
                 update_state_callback(workflow_id, {
@@ -270,6 +285,21 @@ def _execute_text_to_video_workflow(
                     "executionProgress": 10
                 })
             prompts = generate_prompts(concept, numberOfClips, user_id=user_id)
+            
+            # CRITICAL: Check for cancellation AFTER phase 1 completes but BEFORE phase 2 starts
+            if _check_cancellation(workflow_id, get_state_callback):
+                if update_state_callback:
+                    update_state_callback(workflow_id, {
+                        "isRunning": False,
+                        "cancelled": False  # Clear cancelled flag
+                    })
+                return {
+                    "success": False,
+                    "error": "Workflow execution was cancelled during phase 1 (prompt generation)",
+                    "workflow_id": workflow_id,
+                    "cancelled": True
+                }
+            
             if update_state_callback:
                 update_state_callback(workflow_id, {
                     "executionPhase": "executing_comfyui",

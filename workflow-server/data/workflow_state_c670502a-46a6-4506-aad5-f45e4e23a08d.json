@@ -73,5 +73,27 @@
     "executionPhase": "executing_comfyui",
     "executionProgress": 100,
     "cancelled": false
+  },
+  "1765890937158": {
+    "isActive": false,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-16T14:58:43.701946Z",
+    "nextExecutionTime": null,
+    "lastPromptId": "d10d76bb-3014-40a8-be0a-8645829bb300",
+    "executionCount": 0,
+    "executionPhase": "executing_comfyui",
+    "executionProgress": 40,
+    "cancelled": false
+  },
+  "1765897664868": {
+    "isActive": true,
+    "isRunning": false,
+    "lastExecutionTime": "2025-12-16T15:07:48.692009Z",
+    "nextExecutionTime": "2025-12-16T15:19:53.466866Z",
+    "lastPromptId": null,
+    "executionCount": 0,
+    "executionPhase": "generating_prompts",
+    "executionProgress": 30,
+    "cancelled": false
   }
 }
