@@ -473,11 +473,19 @@ def increment_user_execution_count(user_id: str) -> None:
         
         if subscription_plan == "trial" or subscription_plan is None:
             # Increment trial executions (None is treated as trial, matching check_user_can_execute logic)
+            # Get current count before incrementing
+            current_trial_used = user.get("trial_executions_used", 0)
+            new_trial_used = current_trial_used + 1
+            
             cursor.execute("""
                 UPDATE users 
                 SET trial_executions_used = COALESCE(trial_executions_used, 0) + 1
                 WHERE id = ?
             """, (user_id,))
+            
+            # If trial limit is reached (5 executions), deactivate all workflows
+            if new_trial_used >= 5:
+                _deactivate_all_user_workflows(user_id)
         elif subscription_plan in ("basic", "plus", "pro"):
             # Check if we need to reset monthly counter
             reset_date = user.get("executions_reset_date")
@@ -530,6 +538,38 @@ def increment_user_execution_count(user_id: str) -> None:
                     """, (now.isoformat(), user_id))
         
         conn.commit()
+
+
+def _deactivate_all_user_workflows(user_id: str) -> None:
+    """
+    Deactivate all active workflows for a user when trial limit is reached.
+    Calls the workflow server's deactivate-all endpoint.
+    """
+    import httpx
+    
+    try:
+        # Workflow server runs on port 8000
+        workflow_server_url = "http://127.0.0.1:8000"
+        with httpx.Client(timeout=5.0) as client:
+            response = client.post(
+                f"{workflow_server_url}/workflows/deactivate-all",
+                headers={"X-User-Id": user_id}
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success"):
+                    logger.info(f"Deactivated {result.get('count', 0)} workflow(s) for user {user_id} (trial limit reached)")
+                else:
+                    logger.warning(f"Failed to deactivate workflows for user {user_id}: {result.get('error', 'Unknown error')}")
+            else:
+                logger.warning(f"Workflow server returned error {response.status_code} when deactivating workflows for user {user_id}")
+    except httpx.RequestError as e:
+        # Don't fail the execution count increment if workflow deactivation fails
+        # This is a best-effort operation
+        logger.warning(f"Could not deactivate workflows for user {user_id} (workflow server may be unavailable): {str(e)}")
+    except Exception as e:
+        logger.warning(f"Unexpected error deactivating workflows for user {user_id}: {str(e)}")
 
 
 def check_user_can_execute(user_id: str) -> tuple[bool, str]:

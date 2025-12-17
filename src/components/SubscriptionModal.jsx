@@ -1,7 +1,13 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { X, AlertCircle, CreditCard, Zap, Crown } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext.jsx'
+import { createCheckoutSession } from '../utils/apiClient.js'
 
 export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus }) {
+  const { token } = useAuth()
+  const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
+  const [creatingPlan, setCreatingPlan] = useState(null)
+
   if (!isOpen) return null
 
   const usage = subscriptionStatus?.usage || {}
@@ -17,11 +23,29 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
     }
   }
 
-  const handleUpgrade = (plan) => {
-    // Navigate to profile page for subscription management with plan pre-selected
-    const ev = new CustomEvent('navigate', { detail: 'profile', plan })
-    window.dispatchEvent(ev)
-    onClose()
+  const handleUpgrade = async (planName) => {
+    if (!token) return
+    
+    setIsCreatingCheckout(true)
+    setCreatingPlan(planName)
+    try {
+      const result = await createCheckoutSession(token, planName)
+      // Open Stripe checkout in external browser
+      if (window.electronAPI && window.electronAPI.openExternal) {
+        await window.electronAPI.openExternal(result.checkout_url)
+      } else {
+        // Fallback for browser environment
+        window.location.href = result.checkout_url
+      }
+      setIsCreatingCheckout(false)
+      setCreatingPlan(null)
+    } catch (err) {
+      console.error('Error creating checkout session:', err)
+      setIsCreatingCheckout(false)
+      setCreatingPlan(null)
+      // Optionally show an error message to the user
+      alert(err.message || 'Failed to create checkout session. Please try again.')
+    }
   }
 
   return (
@@ -77,7 +101,7 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
         {/* Subscription Plans */}
         <div className="grid md:grid-cols-3 gap-4 mb-6">
           {/* Basic Plan */}
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-blue-600 transition-colors">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-blue-600 transition-colors flex flex-col">
             <div className="flex items-center gap-2 mb-3">
               <Zap className="h-5 w-5 text-blue-400" />
               <h3 className="text-lg font-semibold text-gray-200">Basic</h3>
@@ -101,14 +125,15 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
             </ul>
             <button
               onClick={() => handleUpgrade('basic')}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+              disabled={isCreatingCheckout}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-auto"
             >
-              Upgrade to Basic
+              {isCreatingCheckout && creatingPlan === 'basic' ? 'Processing...' : 'Upgrade to Basic'}
             </button>
           </div>
 
           {/* Plus Plan */}
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-purple-600 transition-colors">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-purple-600 transition-colors flex flex-col">
             <div className="flex items-center gap-2 mb-3">
               <Crown className="h-5 w-5 text-purple-400" />
               <h3 className="text-lg font-semibold text-gray-200">Plus</h3>
@@ -135,14 +160,15 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
             </ul>
             <button
               onClick={() => handleUpgrade('plus')}
-              className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+              disabled={isCreatingCheckout}
+              className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-auto"
             >
-              Upgrade to Plus
+              {isCreatingCheckout && creatingPlan === 'plus' ? 'Processing...' : 'Upgrade to Plus'}
             </button>
           </div>
 
           {/* Pro Plan */}
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-yellow-600 transition-colors">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 hover:border-yellow-600 transition-colors flex flex-col">
             <div className="flex items-center gap-2 mb-3">
               <Crown className="h-5 w-5 text-yellow-400" />
               <h3 className="text-lg font-semibold text-gray-200">Pro</h3>
@@ -170,9 +196,10 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
             </ul>
             <button
               onClick={() => handleUpgrade('pro')}
-              className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+              disabled={isCreatingCheckout}
+              className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-auto"
             >
-              Upgrade to Pro
+              {isCreatingCheckout && creatingPlan === 'pro' ? 'Processing...' : 'Upgrade to Pro'}
             </button>
           </div>
         </div>
