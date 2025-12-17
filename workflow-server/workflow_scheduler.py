@@ -38,7 +38,7 @@ class WorkflowScheduler:
         
         self.running = False
         self.thread = None
-        self.check_interval = 60  # Check every 60 seconds
+        self.check_interval = 10  # Check every 10 seconds for more accurate timing
     
     def start(self):
         """Start the scheduler in a background thread"""

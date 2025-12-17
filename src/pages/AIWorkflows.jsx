@@ -21,6 +21,51 @@ export default function AIWorkflows() {
   const [cancelConfirmModal, setCancelConfirmModal] = useState({ isOpen: false, workflowId: null })
   const [errorModal, setErrorModal] = useState({ isOpen: false, message: '' })
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const [countdowns, setCountdowns] = useState({})
+
+  // Update countdowns every second for active workflows
+  useEffect(() => {
+    const updateCountdowns = () => {
+      const now = new Date()
+      const newCountdowns = {}
+      
+      workflows.forEach(workflow => {
+        const state = workflowStates[workflow.id]
+        if (state?.isActive && !state?.isRunning && state?.nextExecutionTime) {
+          const nextExec = new Date(state.nextExecutionTime)
+          const remainingMs = nextExec - now
+          const scheduleMs = (workflow.schedule || 60) * 60 * 1000
+          
+          if (remainingMs > 0) {
+            const totalSeconds = Math.floor(remainingMs / 1000)
+            const hours = Math.floor(totalSeconds / 3600)
+            const minutes = Math.floor((totalSeconds % 3600) / 60)
+            const seconds = totalSeconds % 60
+            
+            // Progress: 0% = just started waiting, 100% = about to execute
+            const elapsed = scheduleMs - remainingMs
+            const progress = Math.min(100, Math.max(0, (elapsed / scheduleMs) * 100))
+            
+            newCountdowns[workflow.id] = {
+              hours,
+              minutes,
+              seconds,
+              progress,
+              timeString: hours > 0 
+                ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+                : `${minutes}:${seconds.toString().padStart(2, '0')}`
+            }
+          }
+        }
+      })
+      
+      setCountdowns(newCountdowns)
+    }
+    
+    updateCountdowns()
+    const interval = setInterval(updateCountdowns, 1000)
+    return () => clearInterval(interval)
+  }, [workflows, workflowStates])
 
   // Load workflow states from backend
   const loadWorkflowStates = React.useCallback(async () => {
@@ -482,6 +527,21 @@ export default function AIWorkflows() {
                         Created: {new Date(workflow.createdAt).toLocaleDateString()}
                       </div>
                     </div>
+                    {/* Progress bar for active workflows */}
+                    {isActive && !isRunning && countdowns[workflow.id] && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                          <span>Next run in about {countdowns[workflow.id].timeString}</span>
+                          <span>{Math.round(countdowns[workflow.id].progress)}%</span>
+                        </div>
+                        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-1000 ease-linear"
+                            style={{ width: `${countdowns[workflow.id].progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     {(() => {
