@@ -12,6 +12,7 @@ from app.rate_limit import get_rate_limiter
 from app.subscription import check_subscription_required
 from app.llm.factory import get_llm_client
 from app.config import settings
+from app.database import increment_user_execution_count
 import json
 import re
 import logging
@@ -141,6 +142,11 @@ async def generate_prompts(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=message
             )
+    
+    # Increment execution count when making OpenAI request
+    # This ensures the counter increments even if workflow execution is cancelled
+    increment_user_execution_count(user_id)
+    
     if request.number_of_clips < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

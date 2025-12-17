@@ -27,11 +27,11 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 max-w-5xl w-full mx-4 relative">
-        {/* Close button - but it navigates to profile instead of just closing */}
+        {/* Close button */}
         <button
-          onClick={handleUpgrade}
+          onClick={onClose}
           className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition-colors"
-          title="Go to Profile to manage subscription"
+          title="Close"
         >
           <X className="h-5 w-5" />
         </button>
@@ -180,7 +180,7 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
         {/* Info Message */}
         <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4">
           <p className="text-sm text-blue-300">
-            <strong>Note:</strong> This page is blocked until you upgrade. Click "Go to Profile" or any upgrade button to manage your subscription.
+            <strong>Note:</strong> You've reached your free trial limit. Upgrade to continue activating and running AI workflows. Click any upgrade button above to get started.
           </p>
         </div>
       </div>

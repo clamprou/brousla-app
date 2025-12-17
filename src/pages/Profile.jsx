@@ -12,6 +12,15 @@ export default function Profile() {
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
   const fetchingRef = useRef(false)
 
+  // Refresh subscription status when Profile page is viewed
+  useEffect(() => {
+    if (token) {
+      fetchSubscriptionStatus()
+    }
+    // Only run when token changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
   useEffect(() => {
     if (!token) {
       setIsLoading(false)

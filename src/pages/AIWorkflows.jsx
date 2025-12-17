@@ -100,17 +100,7 @@ export default function AIWorkflows() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, userId])
 
-  // Check if subscription is required and show modal
-  useEffect(() => {
-    if (subscriptionStatus) {
-      const canExecute = subscriptionStatus.can_execute
-      if (!canExecute) {
-        setShowSubscriptionModal(true)
-      } else {
-        setShowSubscriptionModal(false)
-      }
-    }
-  }, [subscriptionStatus])
+  // Don't automatically show modal on page load - only show when user tries to activate
 
   // Check if output folder is set when component mounts
   useEffect(() => {
@@ -219,6 +209,16 @@ export default function AIWorkflows() {
   // Handle activate/deactivate workflow
   const handleToggleWorkflow = async (workflowId, isCurrentlyActive) => {
     if (!userId) return
+    
+    // If trying to activate, check subscription first
+    if (!isCurrentlyActive) {
+      const canExecute = subscriptionStatus?.can_execute
+      if (!canExecute) {
+        // Show subscription modal instead of activating
+        setShowSubscriptionModal(true)
+        return
+      }
+    }
     
     setActivatingWorkflow(workflowId)
     try {
@@ -364,13 +364,9 @@ export default function AIWorkflows() {
   }
 
   const handleSubscriptionModalClose = () => {
-    // Navigate to profile page when modal is closed
-    const ev = new CustomEvent('navigate', { detail: 'profile' })
-    window.dispatchEvent(ev)
+    // Just close the modal, don't navigate away
+    setShowSubscriptionModal(false)
   }
-
-  // Block all interactions if subscription modal is shown
-  const isBlocked = showSubscriptionModal
 
   return (
     <div className="p-6 max-w-6xl mx-auto relative">
@@ -380,11 +376,6 @@ export default function AIWorkflows() {
         onClose={handleSubscriptionModalClose}
         subscriptionStatus={subscriptionStatus}
       />
-      
-      {/* Overlay to block interactions when subscription modal is shown */}
-      {isBlocked && (
-        <div className="absolute inset-0 z-40 bg-gray-950/50 backdrop-blur-sm" />
-      )}
         {/* Header */}
         <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
@@ -399,8 +390,7 @@ export default function AIWorkflows() {
           </div>
           <button 
             onClick={navigateToCreateWorkflow}
-            disabled={isBlocked}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
           >
             <Plus className="h-4 w-4" />
             Create Workflow
@@ -550,12 +540,12 @@ export default function AIWorkflows() {
                       return (
                         <button
                           onClick={() => handleToggleWorkflow(workflow.id, isActive)}
-                          disabled={isProcessing || isRunning || isBlocked}
+                          disabled={isProcessing || isRunning}
                           className={`p-2 rounded-lg transition-colors ${
                             isActive
                               ? 'text-green-400 hover:text-green-300 hover:bg-green-600/20'
                               : 'text-gray-400 hover:text-red-300 hover:bg-red-600/20'
-                          } ${isProcessing || isRunning || isBlocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${isProcessing || isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                           title={isActive ? 'Deactivate Workflow' : 'Activate Workflow'}
                         >
                           {isActive ? (
@@ -568,15 +558,13 @@ export default function AIWorkflows() {
                     })()}
                     <button 
                       onClick={() => handleEditWorkflow(workflow.id)}
-                      disabled={isBlocked}
-                      className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+                      className="p-2 text-gray-400 hover:text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" 
                       title="Edit Workflow"
                     >
                       <Edit className="h-4 w-4" />
                     </button>
                     <button 
                       onClick={() => handleDeleteWorkflow(workflow.id, workflow.name)}
-                      disabled={isBlocked}
                       className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-600/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
                       title="Delete Workflow"
                     >
@@ -597,8 +585,7 @@ export default function AIWorkflows() {
             <p className="text-gray-500 text-base mb-6">Create your first workflow to get started with AI-powered content generation</p>
             <button 
               onClick={navigateToCreateWorkflow}
-              disabled={isBlocked}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
             >
               <Plus className="h-4 w-4" />
               Create Your First Workflow

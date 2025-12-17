@@ -471,8 +471,8 @@ def increment_user_execution_count(user_id: str) -> None:
         
         subscription_plan = user.get("subscription_plan")
         
-        if subscription_plan == "trial":
-            # Increment trial executions
+        if subscription_plan == "trial" or subscription_plan is None:
+            # Increment trial executions (None is treated as trial, matching check_user_can_execute logic)
             cursor.execute("""
                 UPDATE users 
                 SET trial_executions_used = COALESCE(trial_executions_used, 0) + 1
