@@ -1,0 +1,78 @@
+# Node / JS
+node_modules/
+.npmrc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+
+# Vite / Build outputs
+/dist/
+/.vite/
+.vite-cache/
+*.local
+
+# Electron Builder artifacts
+/dist_electron/
+release/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.snap
+*.tar.gz
+*.zip
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage / Testing
+coverage/
+.nyc_output/
+.junit/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*.local
+
+# Python / FastAPI
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+.venv/
+venv/
+.envrc
+
+# Server runtime data
+server/outputs/
+server/data/*.json
+!server/data/.gitkeep
+workflow-server/data/
+!workflow-server/data/.gitkeep
+# Models and large assets (keep placeholders only)
+models/*.bin
+models/*.safetensors
+models/*.pt
+assets/tmp/
+
+# Logs
+*.log
+logs/
+
+# Misc
+*.swp
+*.swo
+stripe.exe

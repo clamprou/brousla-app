@@ -1,0 +1,89 @@
+// Settings management utility
+class SettingsManager {
+  constructor() {
+    this.settings = {
+      comfyuiPath: null,
+      comfyuiValidation: null, // Stores validation result
+      comfyuiServer: 'http://localhost:8188',
+      openaiApiKey: null,
+      defaultWorkflow: null,
+      aiWorkflowsOutputFolder: null
+    }
+    this.loadFromStorage()
+  }
+
+  loadFromStorage() {
+    try {
+      const stored = localStorage.getItem('appSettings')
+      if (stored) {
+        this.settings = { ...this.settings, ...JSON.parse(stored) }
+      }
+    } catch (error) {
+      console.error('Error loading settings from storage:', error)
+    }
+  }
+
+  saveToStorage() {
+    try {
+      localStorage.setItem('appSettings', JSON.stringify(this.settings))
+    } catch (error) {
+      console.error('Error saving settings to storage:', error)
+    }
+  }
+
+  setComfyUIPath(path, validationResult = null) {
+    this.settings.comfyuiPath = path
+    this.settings.comfyuiValidation = validationResult
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+
+  setComfyUIValidation(validationResult) {
+    this.settings.comfyuiValidation = validationResult
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+
+  getComfyUIPath() {
+    return this.settings.comfyuiPath
+  }
+
+  setAIWorkflowsOutputFolder(path) {
+    this.settings.aiWorkflowsOutputFolder = path
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+
+  getAIWorkflowsOutputFolder() {
+    return this.settings.aiWorkflowsOutputFolder
+  }
+
+  getSettings() {
+    return { ...this.settings }
+  }
+
+  setSetting(key, value) {
+    this.settings[key] = value
+    this.saveToStorage()
+    
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('settingsUpdated', { 
+      detail: { settings: { ...this.settings } } 
+    }))
+  }
+}
+
+// Create singleton instance
+export const settingsManager = new SettingsManager()

@@ -1,0 +1,66 @@
+"""FastAPI application entry point."""
+import logging
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.routes_auth import router as auth_router
+from app.routes_ai import router as ai_router
+from app.routes_subscription import router as subscription_router
+
+# Configure logging level to DEBUG for our modules
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Set specific loggers to DEBUG
+logging.getLogger("app.routes_ai").setLevel(logging.DEBUG)
+logging.getLogger("app.llm.openai_client").setLevel(logging.DEBUG)
+logging.getLogger("app.llm").setLevel(logging.DEBUG)
+
+app = FastAPI(
+    title="Brousla App Server",
+    description="Backend API server for Brousla desktop app",
+    version="1.0.0"
+)
+
+# CORS middleware (adjust origins for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(ai_router)
+app.include_router(subscription_router)
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "Brousla App Server API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    from app.config import settings
+    
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=True
+    )
+
