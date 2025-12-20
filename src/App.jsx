@@ -15,6 +15,7 @@ import WorkflowTypeSelection from './pages/WorkflowTypeSelection.jsx'
 import ComfyUIConnectionModal from './components/ComfyUIConnectionModal.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { AuthProvider } from './contexts/AuthContext.jsx'
+import StripeCheckoutListener from './components/StripeCheckoutListener.jsx'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -209,6 +210,8 @@ export default function App() {
   return (
     <AuthProvider>
       <ProtectedRoute>
+        {/* Persistent Stripe checkout event listener */}
+        <StripeCheckoutListener />
         <div className="app-shell flex flex-col bg-gray-950">
           {/* ComfyUI Connection Modal - Highest Priority */}
           <ComfyUIConnectionModal

@@ -277,6 +277,56 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
   }
 })
 
+// Create Stripe checkout window
+ipcMain.handle('stripe:openCheckout', async (event, url) => {
+  try {
+    const checkoutWindow = new BrowserWindow({
+      width: 800,
+      height: 900,
+      parent: mainWindow,
+      modal: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      },
+      title: 'Complete Your Subscription'
+    })
+
+    // Load the Stripe checkout URL
+    await checkoutWindow.loadURL(url)
+
+    // Handle window close
+    checkoutWindow.on('closed', () => {
+      // Notify renderer that checkout window was closed
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('stripe:checkout-closed')
+      }
+    })
+
+    // Listen for navigation to success/cancel URLs
+    checkoutWindow.webContents.on('did-navigate', (event, navigationUrl) => {
+      if (navigationUrl.includes('session_id=')) {
+        // Success - notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('stripe:checkout-success', navigationUrl)
+        }
+        checkoutWindow.close()
+      } else if (navigationUrl.includes('cancelled=true')) {
+        // Cancelled - notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('stripe:checkout-cancelled')
+        }
+        checkoutWindow.close()
+      }
+    })
+
+    return { success: true, windowId: checkoutWindow.id }
+  } catch (error) {
+    console.error('Error opening Stripe checkout window:', error)
+    return { success: false, error: error.message }
+  }
+})
+
 // ComfyUI folder validation handler
 ipcMain.handle('comfyui:validateFolder', async (event, folderPath) => {
   try {

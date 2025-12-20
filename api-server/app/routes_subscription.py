@@ -7,6 +7,7 @@ from app.database import (
     check_user_can_execute,
     update_user_subscription
 )
+import os
 from app.subscription import get_subscription_status
 from app.stripe_service import create_checkout_session, handle_stripe_webhook
 from app.models import MessageResponse

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, Check, ExternalLink } from 'lucide-react'
 import { BASE_API_URL } from '../config/api.js'
 import { createCheckoutSession } from '../utils/apiClient.js'
+import StripeCheckoutModal from '../components/StripeCheckoutModal.jsx'
 
 export default function Profile() {
   const { token, logout, subscriptionStatus, fetchSubscriptionStatus } = useAuth()
@@ -10,6 +11,8 @@ export default function Profile() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false)
+  const [checkoutUrl, setCheckoutUrl] = useState(null)
   const fetchingRef = useRef(false)
 
   // Refresh subscription status when Profile page is viewed
@@ -20,6 +23,8 @@ export default function Profile() {
     // Only run when token changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
+
+  // Note: Stripe checkout event listeners are now handled by StripeCheckoutListener component
 
   useEffect(() => {
     if (!token) {
@@ -123,18 +128,28 @@ export default function Profile() {
     setIsCreatingCheckout(true)
     try {
       const result = await createCheckoutSession(token, plan)
-      // Open Stripe checkout in external browser
-      if (window.electronAPI && window.electronAPI.openExternal) {
-        await window.electronAPI.openExternal(result.checkout_url)
-      } else {
-        // Fallback for browser environment
-        window.location.href = result.checkout_url
-      }
+      // Open Stripe checkout in modal instead of external browser
+      setCheckoutUrl(result.checkout_url)
+      setShowCheckoutModal(true)
       setIsCreatingCheckout(false)
     } catch (err) {
       setError(err.message || 'Failed to create checkout session')
       setIsCreatingCheckout(false)
     }
+  }
+
+  const handleCheckoutSuccess = () => {
+    // Refresh subscription status
+    if (token) {
+      fetchSubscriptionStatus()
+    }
+    setShowCheckoutModal(false)
+    setCheckoutUrl(null)
+  }
+
+  const handleCheckoutCancel = () => {
+    setShowCheckoutModal(false)
+    setCheckoutUrl(null)
   }
 
   const getUsageText = () => {
@@ -156,6 +171,15 @@ export default function Profile() {
 
   return (
     <div className="h-full p-6 bg-gray-950">
+      {/* Stripe Checkout Modal */}
+      <StripeCheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={handleCheckoutCancel}
+        checkoutUrl={checkoutUrl}
+        onSuccess={handleCheckoutSuccess}
+        onCancel={handleCheckoutCancel}
+      />
+
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-200 mb-2">Profile</h1>
@@ -210,7 +234,7 @@ export default function Profile() {
                 <h3 className="text-lg font-semibold text-gray-200">Subscription</h3>
               </div>
               
-              {subscriptionStatus ? (
+                  {subscriptionStatus ? (
                 <div className="space-y-4">
                   {/* Current Plan */}
                   <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">

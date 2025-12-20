@@ -2,11 +2,14 @@ import React, { useState } from 'react'
 import { X, AlertCircle, CreditCard, Zap, Crown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { createCheckoutSession } from '../utils/apiClient.js'
+import StripeCheckoutModal from './StripeCheckoutModal.jsx'
 
 export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus }) {
-  const { token } = useAuth()
+  const { token, fetchSubscriptionStatus } = useAuth()
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
   const [creatingPlan, setCreatingPlan] = useState(null)
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false)
+  const [checkoutUrl, setCheckoutUrl] = useState(null)
 
   if (!isOpen) return null
 
@@ -30,13 +33,9 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
     setCreatingPlan(planName)
     try {
       const result = await createCheckoutSession(token, planName)
-      // Open Stripe checkout in external browser
-      if (window.electronAPI && window.electronAPI.openExternal) {
-        await window.electronAPI.openExternal(result.checkout_url)
-      } else {
-        // Fallback for browser environment
-        window.location.href = result.checkout_url
-      }
+      // Open Stripe checkout in modal instead of external browser
+      setCheckoutUrl(result.checkout_url)
+      setShowCheckoutModal(true)
       setIsCreatingCheckout(false)
       setCreatingPlan(null)
     } catch (err) {
@@ -48,9 +47,35 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
     }
   }
 
+  const handleCheckoutSuccess = () => {
+    // Refresh subscription status
+    if (fetchSubscriptionStatus) {
+      fetchSubscriptionStatus()
+    }
+    setShowCheckoutModal(false)
+    setCheckoutUrl(null)
+    // Close the subscription modal as well since subscription is now active
+    onClose()
+  }
+
+  const handleCheckoutCancel = () => {
+    setShowCheckoutModal(false)
+    setCheckoutUrl(null)
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 max-w-5xl w-full mx-4 relative">
+    <>
+      {/* Stripe Checkout Modal */}
+      <StripeCheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={handleCheckoutCancel}
+        checkoutUrl={checkoutUrl}
+        onSuccess={handleCheckoutSuccess}
+        onCancel={handleCheckoutCancel}
+      />
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 max-w-5xl w-full mx-4 relative">
         {/* Close button */}
         <button
           onClick={onClose}
@@ -210,8 +235,9 @@ export default function SubscriptionModal({ isOpen, onClose, subscriptionStatus 
             <strong>Note:</strong> You've reached your free trial limit. Upgrade to continue activating and running AI workflows. Click any upgrade button above to get started.
           </p>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

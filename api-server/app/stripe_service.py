@@ -62,12 +62,14 @@ def create_checkout_session(user_id: str, user_email: str, plan: str) -> Tuple[s
             cancel_url=f"{app_base_url}/profile?cancelled=true",
             metadata={
                 "user_id": user_id,
-                "plan": plan
+                "plan": plan,
+                "price_id": price_id
             },
             subscription_data={
                 "metadata": {
                     "user_id": user_id,
-                    "plan": plan
+                    "plan": plan,
+                    "price_id": price_id
                 }
             }
         )
@@ -114,53 +116,85 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
     if event_type == "checkout.session.completed":
         # Subscription was created
         session = data
-        user_id = session.get("metadata", {}).get("user_id")
-        plan = session.get("metadata", {}).get("plan")
+        metadata = session.get("metadata", {})
+        user_id = metadata.get("user_id")
+        plan = metadata.get("plan")
+        price_id = metadata.get("price_id")  # Read price_id from session metadata
         subscription_id = session.get("subscription")
         
-        if user_id and plan and subscription_id:
-            # Get subscription details
+        if not user_id or not subscription_id:
+            logger.warning(f"checkout.session.completed missing required fields: user_id={user_id}, subscription_id={subscription_id}")
+            return False
+        
+        # Get subscription details
+        try:
             subscription = stripe.Subscription.retrieve(subscription_id)
             customer_id = subscription.customer
-            
-            # Get price metadata from the subscription's price
-            monthly_workflow_limit = None
-            plan_from_metadata = plan
-            
-            if subscription.get("items") and len(subscription["items"]["data"]) > 0:
-                price_id = subscription["items"]["data"][0].get("price", {}).get("id")
-                if price_id:
+        except Exception as e:
+            logger.error(f"Error retrieving subscription {subscription_id}: {e}")
+            return False
+        
+        # Get plan and monthly_workflow_limit from price metadata
+        monthly_workflow_limit = None
+        plan_from_metadata = plan
+        
+        # Use price_id from session metadata if available, otherwise get from subscription
+        if not price_id and subscription.get("items") and len(subscription["items"]["data"]) > 0:
+            price_id = subscription["items"]["data"][0].get("price", {}).get("id")
+        
+        if price_id:
+            try:
+                price = stripe.Price.retrieve(price_id)
+                price_metadata = price.get("metadata", {})
+                # Get plan and monthly_workflow_limit from price metadata
+                plan_from_metadata = price_metadata.get("plan", plan)
+                monthly_workflow_limit_str = price_metadata.get("monthly_workflow_limit")
+                if monthly_workflow_limit_str:
                     try:
-                        price = stripe.Price.retrieve(price_id)
-                        price_metadata = price.get("metadata", {})
-                        # Get plan and monthly_workflow_limit from price metadata
-                        plan_from_metadata = price_metadata.get("plan", plan)
-                        monthly_workflow_limit_str = price_metadata.get("monthly_workflow_limit")
-                        if monthly_workflow_limit_str:
-                            try:
-                                monthly_workflow_limit = int(monthly_workflow_limit_str)
-                            except (ValueError, TypeError):
-                                logger.warning(f"Invalid monthly_workflow_limit in price metadata: {monthly_workflow_limit_str}")
-                    except stripe.error.StripeError as e:
-                        logger.error(f"Error retrieving price {price_id}: {e}")
-            
-            # Calculate dates
+                        monthly_workflow_limit = int(monthly_workflow_limit_str)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid monthly_workflow_limit in price metadata: {monthly_workflow_limit_str}")
+            except stripe.error.StripeError as e:
+                logger.error(f"Error retrieving price {price_id}: {e}")
+        
+        # Calculate dates (optional metadata - don't block update if unavailable)
+        start_date = None
+        end_date = None
+        
+        # Try to access current_period_start/end - Stripe Python SDK objects support attribute access
+        try:
             start_date = datetime.fromtimestamp(subscription.current_period_start)
             end_date = datetime.fromtimestamp(subscription.current_period_end)
-            
-            # Update user subscription with metadata from Stripe
+        except (AttributeError, KeyError) as e:
+            # Fallback: try to get from items period
+            try:
+                if subscription.items and len(subscription.items.data) > 0:
+                    item = subscription.items.data[0]
+                    if hasattr(item, 'period') and item.period:
+                        start_date = datetime.fromtimestamp(item.period.start)
+                        end_date = datetime.fromtimestamp(item.period.end)
+            except Exception as fallback_error:
+                logger.warning(f"Could not retrieve subscription dates for {subscription_id}: {e}, fallback also failed: {fallback_error}. Continuing without dates.")
+        
+        # Update user subscription with metadata from Stripe
+        # Dates are optional - never block update if dates are unavailable
+        try:
             update_user_subscription(
                 user_id=user_id,
                 plan=plan_from_metadata,
                 status="active",
                 stripe_customer_id=customer_id,
                 stripe_subscription_id=subscription_id,
-                start_date=start_date.isoformat(),
-                end_date=end_date.isoformat(),
+                start_date=start_date.isoformat() if start_date else None,
+                end_date=end_date.isoformat() if end_date else None,
                 monthly_workflow_limit=monthly_workflow_limit
             )
             logger.info(f"Updated subscription for user {user_id}: {plan_from_metadata}, limit: {monthly_workflow_limit}")
-            return True
+        except Exception as e:
+            logger.error(f"Error updating subscription for user {user_id}: {e}")
+            return False
+        
+        return True
     
     elif event_type == "customer.subscription.updated":
         # Subscription was updated (e.g., plan change, renewal)
@@ -260,6 +294,41 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         )
         logger.info(f"Cancelled subscription for user {user_id}")
         return True
+    
+    elif event_type == "invoice.paid":
+        # Recurring payment was successful
+        invoice = data
+        subscription_id = invoice.get("subscription")
+        
+        if not subscription_id:
+            logger.warning("invoice.paid event missing subscription_id")
+            return False
+        
+        # Try to find user by subscription ID
+        user = get_user_by_stripe_subscription_id(subscription_id)
+        
+        if not user:
+            logger.warning(f"Could not find user for subscription {subscription_id} in invoice.paid event")
+            return False
+        
+        user_id = user["id"]
+        
+        # Retrieve subscription to get current period end
+        try:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            end_date = datetime.fromtimestamp(subscription.current_period_end)
+            
+            # Update subscription end date (renewal)
+            update_user_subscription(
+                user_id=user_id,
+                end_date=end_date.isoformat(),
+                status="active"
+            )
+            logger.info(f"Updated subscription renewal for user {user_id}, new end date: {end_date.isoformat()}")
+            return True
+        except stripe.error.StripeError as e:
+            logger.error(f"Error retrieving subscription {subscription_id} in invoice.paid handler: {e}")
+            return False
     
     # Event not handled
     return False
