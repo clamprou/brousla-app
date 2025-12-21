@@ -10,6 +10,7 @@ from app.database import (
 import os
 from app.subscription import get_subscription_status
 from app.stripe_service import create_checkout_session, handle_stripe_webhook
+import stripe
 from app.models import MessageResponse
 from typing import Optional
 import logging
@@ -178,6 +179,66 @@ async def increment_execution_internal(request: Request, user_id: str = Body(...
         "message": "Execution count incremented",
         "subscription_status": status_info
     }
+
+
+@router.post("/cancel")
+async def cancel_subscription(current_user: dict = Depends(get_current_user)):
+    """
+    Cancel the current user's subscription.
+    Cancels the subscription in Stripe, which will trigger a webhook to update the database.
+    
+    Returns:
+        { "success": bool, "message": str }
+    """
+    user_id = current_user["id"]
+    
+    # Get user's subscription to find Stripe subscription ID
+    subscription_data = get_user_subscription(user_id)
+    
+    if not subscription_data or not subscription_data.get("stripe_subscription_id"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active subscription found"
+        )
+    
+    stripe_subscription_id = subscription_data["stripe_subscription_id"]
+    
+    try:
+        from app.config import settings
+        import os
+        
+        stripe.api_key = settings.stripe_secret_key or os.getenv("STRIPE_SECRET_KEY", "")
+        
+        if not stripe.api_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Stripe not configured"
+            )
+        
+        # Cancel the subscription at period end (don't cancel immediately)
+        subscription = stripe.Subscription.modify(
+            stripe_subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        logger.info(f"Cancelled subscription {stripe_subscription_id} for user {user_id} (at period end)")
+        
+        return {
+            "success": True,
+            "message": "Subscription will be cancelled at the end of the current billing period"
+        }
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error cancelling subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel subscription: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error cancelling subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel subscription: {str(e)}"
+        )
 
 
 @router.post("/webhook")

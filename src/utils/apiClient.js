@@ -459,3 +459,36 @@ export async function createCheckoutSession(token, plan) {
   return await response.json()
 }
 
+/**
+ * Cancel the current user's subscription
+ * @param {string} token - JWT token
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function cancelSubscription(token) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/cancel`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to cancel subscription')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+
