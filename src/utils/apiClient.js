@@ -14,11 +14,18 @@ export async function login(credentials) {
   const requestBody = JSON.stringify(credentials)
   const requestUrl = `${BASE_API_URL}/auth/login`
   
+  const safeCredentialsForLog = {
+    ...credentials,
+    ...(credentials && typeof credentials === 'object' && 'password' in credentials
+      ? { password: '[REDACTED]' }
+      : null),
+  }
+
   console.log('Login Request:', {
     url: requestUrl,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: credentials
+    body: safeCredentialsForLog
   })
 
   const response = await fetch(requestUrl, {
@@ -51,7 +58,7 @@ export async function login(credentials) {
     error.status = response.status
     error.statusText = response.statusText
     error.responseBody = errorData
-    error.requestBody = credentials
+    error.requestBody = safeCredentialsForLog
     error.requestUrl = requestUrl
     throw error
   }
@@ -69,11 +76,16 @@ export async function register(data) {
   const requestBody = JSON.stringify(data)
   const requestUrl = `${BASE_API_URL}/auth/register`
   
+  const safeRegistrationForLog = {
+    ...data,
+    ...(data && typeof data === 'object' && 'password' in data ? { password: '[REDACTED]' } : null),
+  }
+
   console.log('Register Request:', {
     url: requestUrl,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: data
+    body: safeRegistrationForLog
   })
 
   const response = await fetch(requestUrl, {
@@ -106,7 +118,7 @@ export async function register(data) {
     error.status = response.status
     error.statusText = response.statusText
     error.responseBody = errorData
-    error.requestBody = data
+    error.requestBody = safeRegistrationForLog
     error.requestUrl = requestUrl
     throw error
   }
