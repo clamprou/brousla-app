@@ -34,166 +34,71 @@ def init_db() -> None:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
-        # Create users table
+        # Create users table (clean schema - only essential columns)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 hashed_password TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                email_verified INTEGER DEFAULT 0,
+                email_verification_token TEXT,
+                email_verification_token_expires TIMESTAMP
             )
         """)
         
-        # Add email verification columns if they don't exist (migration)
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+        # Migrate existing table if it has old columns
+        _migrate_users_table_to_clean_schema(cursor)
         
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN email_verification_token TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN email_verification_token_expires TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN last_confirmation_email_sent TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        # Add subscription columns if they don't exist (migration)
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN subscription_plan TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN subscription_status TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN trial_executions_used INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN subscription_start_date TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN subscription_end_date TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN executions_used_this_month INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN executions_reset_date TIMESTAMP")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN monthly_workflow_limit INTEGER")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
-        # Grandfather existing users: set trial_executions_used = 0 for all existing users
-        # Only update users where trial_executions_used IS NULL (newly added column)
+        # Create usage table (tracks execution counts for all users)
         cursor.execute("""
-            UPDATE users 
-            SET trial_executions_used = 0 
-            WHERE trial_executions_used IS NULL
+            CREATE TABLE IF NOT EXISTS usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL UNIQUE,
+                trial_workflows_used INTEGER DEFAULT 0,
+                monthly_workflows_used INTEGER DEFAULT 0,
+                last_reset_date TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
         """)
         
-        # Migration: Allow NULL passwords for OAuth users
-        # SQLite doesn't support ALTER COLUMN, so we need to check and migrate if needed
-        try:
-            # Check the current schema of the hashed_password column
-            cursor.execute("PRAGMA table_info(users)")
-            columns = cursor.fetchall()
-            hashed_password_info = None
-            for col in columns:
-                if col[1] == 'hashed_password':  # Column name is at index 1
-                    hashed_password_info = col
-                    break
-            
-            # If the column exists and has NOT NULL constraint (notnull=1), we need to migrate
-            if hashed_password_info and hashed_password_info[3] == 1:  # notnull is at index 3
-                print("Migrating users table to allow NULL passwords for OAuth users...")
-                # Create new table with NULL allowed
-                cursor.execute("""
-                    CREATE TABLE users_new (
-                        id TEXT PRIMARY KEY,
-                        email TEXT UNIQUE NOT NULL,
-                        hashed_password TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        email_verified INTEGER DEFAULT 0,
-                        email_verification_token TEXT,
-                        email_verification_token_expires TIMESTAMP,
-                        last_confirmation_email_sent TIMESTAMP
-                    )
-                """)
-                
-                # Copy data from old table to new table
-                cursor.execute("""
-                    INSERT INTO users_new 
-                    (id, email, hashed_password, created_at, email_verified, 
-                     email_verification_token, email_verification_token_expires, 
-                     last_confirmation_email_sent)
-                    SELECT id, email, hashed_password, created_at, email_verified,
-                           email_verification_token, email_verification_token_expires,
-                           last_confirmation_email_sent
-                    FROM users
-                """)
-                
-                # Drop old table
-                cursor.execute("DROP TABLE users")
-                
-                # Rename new table
-                cursor.execute("ALTER TABLE users_new RENAME TO users")
-                
-                # Recreate indexes
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(email_verification_token)
-                """)
-                
-                conn.commit()
-                print("Migration completed successfully.")
-        except sqlite3.OperationalError as e:
-            # If migration fails, log but don't crash (table might already be migrated)
-            print(f"Migration check completed (table may already be migrated): {e}")
-            pass
-        
-        # Set email_verified=1 for existing users (grandfather them)
-        # Only update users where email_verified IS NULL (existed before migration)
-        # Don't update users with email_verified=0 (new unverified users)
+        # Create index on user_id for fast lookups
         cursor.execute("""
-            UPDATE users 
-            SET email_verified = 1 
-            WHERE email_verified IS NULL
+            CREATE INDEX IF NOT EXISTS idx_usage_user_id ON usage(user_id)
         """)
+        
+        # Create subscriptions table (mirrors Stripe subscription data only)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                stripe_subscription_id TEXT UNIQUE NOT NULL,
+                stripe_price_id TEXT,
+                plan TEXT,
+                status TEXT,
+                current_period_start TIMESTAMP,
+                current_period_end TIMESTAMP,
+                cancel_at_period_end INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id)
+            )
+        """)
+        
+        # Create index on user_id for fast lookups
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)
+        """)
+        
+        # Create index on stripe_subscription_id for fast lookups
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id)
+        """)
+        
+        # Migrate existing subscription data to new schema
+        _migrate_subscriptions_to_new_schema(cursor)
         
         # Create index on email for fast lookups
         cursor.execute("""
@@ -208,18 +113,220 @@ def init_db() -> None:
         conn.commit()
 
 
+def _migrate_users_table_to_clean_schema(cursor) -> None:
+    """Migrate users table to clean schema (remove unnecessary columns)."""
+    try:
+        cursor.execute("PRAGMA table_info(users)")
+        columns = cursor.fetchall()
+        column_names = {col[1] for col in columns}
+        
+        # Check if migration needed (old schema has created_at or last_confirmation_email_sent)
+        has_old_columns = 'created_at' in column_names or 'last_confirmation_email_sent' in column_names
+        
+        if not has_old_columns:
+            # Already clean, just ensure email_verified exists
+            if 'email_verified' not in column_names:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
+            if 'email_verification_token' not in column_names:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN email_verification_token TEXT")
+                except sqlite3.OperationalError:
+                    pass
+            if 'email_verification_token_expires' not in column_names:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN email_verification_token_expires TIMESTAMP")
+                except sqlite3.OperationalError:
+                    pass
+            return
+        
+        logger.info("Migrating users table to clean schema...")
+        
+        # Create new clean table
+        cursor.execute("""
+            CREATE TABLE users_new (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                hashed_password TEXT,
+                email_verified INTEGER DEFAULT 0,
+                email_verification_token TEXT,
+                email_verification_token_expires TIMESTAMP
+            )
+        """)
+        
+        # Copy data from old table (only essential columns)
+        cursor.execute("""
+            INSERT INTO users_new 
+            (id, email, hashed_password, email_verified, 
+             email_verification_token, email_verification_token_expires)
+            SELECT 
+                id, 
+                email, 
+                hashed_password,
+                COALESCE(email_verified, 0),
+                email_verification_token,
+                email_verification_token_expires
+            FROM users
+        """)
+        
+        # Drop old table
+        cursor.execute("DROP TABLE users")
+        
+        # Rename new table
+        cursor.execute("ALTER TABLE users_new RENAME TO users")
+        
+        # Recreate indexes
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(email_verification_token)
+        """)
+        
+        logger.info("Successfully migrated users table to clean schema")
+        
+    except sqlite3.OperationalError as e:
+        logger.debug(f"Users table migration check: {e}")
+
+
+def _migrate_subscriptions_to_new_schema(cursor) -> None:
+    """Migrate subscriptions table to new schema (separate usage from subscriptions)."""
+    try:
+        # Check if old subscriptions table exists with old schema
+        cursor.execute("PRAGMA table_info(subscriptions)")
+        columns = cursor.fetchall()
+        column_names = {col[1] for col in columns}
+        
+        # Check if migration already done (new schema has stripe_price_id, old doesn't)
+        has_new_schema = 'stripe_price_id' in column_names
+        has_old_schema = 'trial_executions_used' in column_names or 'executions_used_this_month' in column_names
+        
+        if has_new_schema and not has_old_schema:
+            # Already migrated
+            # Ensure all users have usage records
+            cursor.execute("""
+                INSERT OR IGNORE INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+                SELECT id, 0, 0
+                FROM users
+                WHERE id NOT IN (SELECT user_id FROM usage)
+            """)
+            return
+        
+        if not has_old_schema:
+            # No old schema to migrate from
+            # Just ensure all users have usage records
+            cursor.execute("""
+                INSERT OR IGNORE INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+                SELECT id, 0, 0
+                FROM users
+                WHERE id NOT IN (SELECT user_id FROM usage)
+            """)
+            return
+        
+        logger.info("Migrating subscriptions table to new schema...")
+        
+        # Step 1: Migrate usage data to usage table
+        cursor.execute("""
+            INSERT OR IGNORE INTO usage (
+                user_id, trial_workflows_used, monthly_workflows_used, last_reset_date
+            )
+            SELECT 
+                user_id,
+                COALESCE(trial_executions_used, 0),
+                COALESCE(executions_used_this_month, 0),
+                executions_reset_date
+            FROM subscriptions
+            WHERE user_id IS NOT NULL
+        """)
+        
+        # Step 2: Create new subscriptions table with cleaned schema
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                stripe_subscription_id TEXT UNIQUE NOT NULL,
+                stripe_price_id TEXT,
+                plan TEXT,
+                status TEXT,
+                current_period_start TIMESTAMP,
+                current_period_end TIMESTAMP,
+                cancel_at_period_end INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id)
+            )
+        """)
+        
+        # Step 3: Copy subscription data (only Stripe-related fields)
+        # Only copy rows that have stripe_subscription_id (paid subscriptions)
+        cursor.execute("""
+            INSERT INTO subscriptions_new (
+                user_id, stripe_subscription_id, stripe_price_id, plan, status,
+                current_period_start, current_period_end, cancel_at_period_end,
+                created_at, updated_at
+            )
+            SELECT 
+                user_id,
+                stripe_subscription_id,
+                NULL as stripe_price_id,  -- Will be populated from Stripe API if needed
+                plan,
+                status,
+                subscription_start_date as current_period_start,
+                subscription_end_date as current_period_end,
+                0 as cancel_at_period_end,  -- Default, will be updated by webhooks
+                created_at,
+                updated_at
+            FROM subscriptions
+            WHERE stripe_subscription_id IS NOT NULL
+        """)
+        
+        # Step 4: Drop old table and rename new one
+        cursor.execute("DROP TABLE subscriptions")
+        cursor.execute("ALTER TABLE subscriptions_new RENAME TO subscriptions")
+        
+        # Step 5: Recreate indexes
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id)
+        """)
+        
+        # Step 6: Create usage records for users without subscriptions (trial users)
+        cursor.execute("""
+            INSERT OR IGNORE INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+            SELECT id, 0, 0
+            FROM users
+            WHERE id NOT IN (SELECT user_id FROM usage)
+        """)
+        
+        logger.info("Successfully migrated subscriptions table to new schema")
+        
+    except sqlite3.OperationalError as e:
+        # Migration might have already been done or table doesn't exist
+        logger.debug(f"Subscription migration check: {e}")
+        # Ensure all users have usage records even if migration failed
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+                SELECT id, 0, 0
+                FROM users
+                WHERE id NOT IN (SELECT user_id FROM usage)
+            """)
+        except sqlite3.OperationalError:
+            pass
+
+
 def get_user_by_email(email: str) -> Optional[dict]:
     """Get user by email address."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, email, hashed_password, email_verified, 
-                   email_verification_token, email_verification_token_expires,
-                   last_confirmation_email_sent,
-                   subscription_plan, subscription_status, trial_executions_used,
-                   subscription_start_date, subscription_end_date,
-                   executions_used_this_month, executions_reset_date,
-                   stripe_customer_id, stripe_subscription_id, monthly_workflow_limit
+                   email_verification_token, email_verification_token_expires
             FROM users WHERE email = ?
         """, (email,))
         row = cursor.fetchone()
@@ -233,17 +340,7 @@ def get_user_by_email(email: str) -> Optional[dict]:
                 "hashed_password": row["hashed_password"],  # Can be None for OAuth users
                 "email_verified": bool(email_verified_val) if email_verified_val is not None else True,
                 "email_verification_token": row["email_verification_token"],
-                "email_verification_token_expires": row["email_verification_token_expires"],
-                "last_confirmation_email_sent": row["last_confirmation_email_sent"],
-                "subscription_plan": row["subscription_plan"],
-                "subscription_status": row["subscription_status"],
-                "trial_executions_used": row["trial_executions_used"] or 0,
-                "subscription_start_date": row["subscription_start_date"],
-                "subscription_end_date": row["subscription_end_date"],
-                "executions_used_this_month": row["executions_used_this_month"] or 0,
-                "executions_reset_date": row["executions_reset_date"],
-                "stripe_customer_id": row["stripe_customer_id"],
-                "stripe_subscription_id": row["stripe_subscription_id"]
+                "email_verification_token_expires": row["email_verification_token_expires"]
             }
         return None
 
@@ -254,12 +351,7 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, email, hashed_password, email_verified,
-                   email_verification_token, email_verification_token_expires,
-                   last_confirmation_email_sent,
-                   subscription_plan, subscription_status, trial_executions_used,
-                   subscription_start_date, subscription_end_date,
-                   executions_used_this_month, executions_reset_date,
-                   stripe_customer_id, stripe_subscription_id, monthly_workflow_limit
+                   email_verification_token, email_verification_token_expires
             FROM users WHERE id = ?
         """, (user_id,))
         row = cursor.fetchone()
@@ -273,18 +365,7 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
                 "hashed_password": row["hashed_password"],  # Can be None for OAuth users
                 "email_verified": bool(email_verified_val) if email_verified_val is not None else True,
                 "email_verification_token": row["email_verification_token"],
-                "email_verification_token_expires": row["email_verification_token_expires"],
-                "last_confirmation_email_sent": row["last_confirmation_email_sent"],
-                "subscription_plan": row["subscription_plan"],
-                "subscription_status": row["subscription_status"],
-                "trial_executions_used": row["trial_executions_used"] or 0,
-                "subscription_start_date": row["subscription_start_date"],
-                "subscription_end_date": row["subscription_end_date"],
-                "executions_used_this_month": row["executions_used_this_month"] or 0,
-                "executions_reset_date": row["executions_reset_date"],
-                "stripe_customer_id": row["stripe_customer_id"],
-                "stripe_subscription_id": row["stripe_subscription_id"],
-                "monthly_workflow_limit": row["monthly_workflow_limit"]
+                "email_verification_token_expires": row["email_verification_token_expires"]
             }
         return None
 
@@ -307,13 +388,18 @@ def create_user(user_id: str, email: str, hashed_password: Optional[str] = None,
         cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO users (id, email, hashed_password, email_verified, 
-               email_verification_token, email_verification_token_expires,
-               subscription_plan, trial_executions_used) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               email_verification_token, email_verification_token_expires) 
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (user_id, email, hashed_password, 1 if email_verified else 0, 
-             email_verification_token, email_verification_token_expires,
-             'trial', 0)
+             email_verification_token, email_verification_token_expires)
         )
+        
+        # Create usage record for new user (trial users have no subscription row)
+        cursor.execute("""
+            INSERT INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+            VALUES (?, 0, 0)
+        """, (user_id,))
+        
         conn.commit()
 
 
@@ -334,8 +420,7 @@ def get_user_by_verification_token(token: str) -> Optional[dict]:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, email, hashed_password, email_verified,
-                   email_verification_token, email_verification_token_expires,
-                   last_confirmation_email_sent
+                   email_verification_token, email_verification_token_expires
             FROM users WHERE email_verification_token = ?
         """, (token,))
         row = cursor.fetchone()
@@ -349,8 +434,7 @@ def get_user_by_verification_token(token: str) -> Optional[dict]:
                 "hashed_password": row["hashed_password"],  # Can be None for OAuth users
                 "email_verified": bool(email_verified_val) if email_verified_val is not None else True,
                 "email_verification_token": row["email_verification_token"],
-                "email_verification_token_expires": row["email_verification_token_expires"],
-                "last_confirmation_email_sent": row["last_confirmation_email_sent"]
+                "email_verification_token_expires": row["email_verification_token_expires"]
             }
         return None
 
@@ -365,32 +449,6 @@ def update_user_verification_token(user_id: str, token: Optional[str], expires_a
             (token, expires_at, user_id)
         )
         conn.commit()
-
-
-def update_user_last_confirmation_email_sent(user_id: str, timestamp: str) -> None:
-    """Update the timestamp when confirmation email was last sent."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE users SET last_confirmation_email_sent = ? WHERE id = ?",
-            (timestamp, user_id)
-        )
-        conn.commit()
-
-
-def get_user_last_confirmation_email_sent(user_id: str) -> Optional[str]:
-    """Get the timestamp when confirmation email was last sent."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT last_confirmation_email_sent FROM users WHERE id = ?",
-            (user_id,)
-        )
-        row = cursor.fetchone()
-        if row:
-            # sqlite3.Row doesn't support .get(), use direct access
-            return row["last_confirmation_email_sent"]
-        return None
 
 
 def migrate_from_json(json_file_path: Path) -> None:
@@ -438,38 +496,109 @@ def migrate_from_json(json_file_path: Path) -> None:
         print(f"Warning: Failed to migrate users from JSON: {e}")
 
 
-def get_user_subscription(user_id: str) -> Optional[dict]:
-    """Get user subscription details."""
-    user = get_user_by_id(user_id)
-    if not user:
+def get_user_usage(user_id: str) -> Optional[dict]:
+    """Get user usage details."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT trial_workflows_used, monthly_workflows_used, last_reset_date
+            FROM usage WHERE user_id = ?
+        """, (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            return {
+                "trial_workflows_used": row["trial_workflows_used"] or 0,
+                "monthly_workflows_used": row["monthly_workflows_used"] or 0,
+                "last_reset_date": row["last_reset_date"]
+            }
+        
+        # Create usage record if doesn't exist (shouldn't happen, but safety check)
+        cursor.execute("""
+            INSERT INTO usage (user_id, trial_workflows_used, monthly_workflows_used)
+            VALUES (?, 0, 0)
+        """, (user_id,))
+        conn.commit()
+        
+        return {
+            "trial_workflows_used": 0,
+            "monthly_workflows_used": 0,
+            "last_reset_date": None
+        }
+
+
+def get_monthly_workflow_limit_from_stripe(stripe_price_id: Optional[str]) -> Optional[int]:
+    """Fetch monthly workflow limit from Stripe price metadata."""
+    if not stripe_price_id:
         return None
     
-    return {
-        "subscription_plan": user.get("subscription_plan"),
-        "subscription_status": user.get("subscription_status"),
-        "trial_executions_used": user.get("trial_executions_used", 0),
-        "subscription_start_date": user.get("subscription_start_date"),
-        "subscription_end_date": user.get("subscription_end_date"),
-        "executions_used_this_month": user.get("executions_used_this_month", 0),
-        "executions_reset_date": user.get("executions_reset_date"),
-        "stripe_customer_id": user.get("stripe_customer_id"),
-        "stripe_subscription_id": user.get("stripe_subscription_id"),
-        "monthly_workflow_limit": user.get("monthly_workflow_limit")
-    }
+    try:
+        import stripe
+        from app.config import settings
+        import os
+        
+        stripe.api_key = settings.stripe_secret_key or os.getenv("STRIPE_SECRET_KEY", "")
+        if not stripe.api_key:
+            logger.warning("Stripe API key not configured, cannot fetch monthly limit")
+            return None
+        
+        price = stripe.Price.retrieve(stripe_price_id)
+        price_metadata = price.get("metadata", {})
+        monthly_workflow_limit_str = price_metadata.get("monthly_workflow_limit")
+        
+        if monthly_workflow_limit_str:
+            try:
+                return int(monthly_workflow_limit_str)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid monthly_workflow_limit in price metadata: {monthly_workflow_limit_str}")
+                return None
+    except Exception as e:
+        logger.warning(f"Error fetching monthly limit from Stripe for price {stripe_price_id}: {e}")
+        return None
+    
+    return None
+
+
+def get_user_subscription(user_id: str) -> Optional[dict]:
+    """Get user subscription details (only Stripe subscription data, no usage)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT plan, status, stripe_subscription_id, stripe_price_id,
+                   current_period_start, current_period_end, cancel_at_period_end
+            FROM subscriptions WHERE user_id = ?
+        """, (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            return {
+                "subscription_plan": row["plan"],
+                "subscription_status": row["status"],
+                "stripe_subscription_id": row["stripe_subscription_id"],
+                "stripe_price_id": row["stripe_price_id"],
+                "current_period_start": row["current_period_start"],
+                "current_period_end": row["current_period_end"],
+                "cancel_at_period_end": bool(row["cancel_at_period_end"]) if row["cancel_at_period_end"] is not None else False
+            }
+        
+        # No subscription (trial user)
+        return None
 
 
 def increment_user_execution_count(user_id: str) -> None:
     """Increment execution count for user (trial or monthly)."""
-    from datetime import datetime, timedelta
+    from datetime import datetime
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        user = get_user_by_id(user_id)
         
-        if not user:
+        # Get subscription to determine if trial or paid
+        subscription = get_user_subscription(user_id)
+        
+        # Get usage record
+        usage = get_user_usage(user_id)
+        if not usage:
             return
-        
-        subscription_plan = user.get("subscription_plan")
         
         def _first_day_next_month(dt: datetime) -> datetime:
             """Return UTC timestamp for next month's 1st day at 00:00:00."""
@@ -477,67 +606,75 @@ def increment_user_execution_count(user_id: str) -> None:
                 return dt.replace(year=dt.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
             return dt.replace(month=dt.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
         
-        if subscription_plan == "trial" or subscription_plan is None:
-            # Increment trial executions (None is treated as trial, matching check_user_can_execute logic)
-            # Get current count before incrementing
-            current_trial_used = user.get("trial_executions_used", 0)
+        # If no subscription, user is on trial
+        if not subscription:
+            # Increment trial executions
+            current_trial_used = usage.get("trial_workflows_used", 0)
             new_trial_used = current_trial_used + 1
             
             cursor.execute("""
-                UPDATE users 
-                SET trial_executions_used = COALESCE(trial_executions_used, 0) + 1
-                WHERE id = ?
+                UPDATE usage 
+                SET trial_workflows_used = trial_workflows_used + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
             """, (user_id,))
             
             # If trial limit is reached (5 executions), deactivate all workflows
             if new_trial_used >= 5:
                 _deactivate_all_user_workflows(user_id)
-        elif subscription_plan in ("basic", "plus", "pro"):
-            # executions_reset_date stores the *next* time we reset the monthly counter (UTC).
-            reset_date = user.get("executions_reset_date")
-            now = datetime.utcnow()
-            
-            if not reset_date:
-                # First execution: set next reset date to start of next month.
-                next_reset = _first_day_next_month(now)
-                cursor.execute("""
-                    UPDATE users 
-                    SET executions_used_this_month = 1,
-                        executions_reset_date = ?
-                    WHERE id = ?
-                """, (next_reset.isoformat(), user_id))
-            else:
-                # Parse next reset date and check if we need to reset
-                try:
-                    reset_dt = datetime.fromisoformat(reset_date.replace('Z', '+00:00'))
-                    if reset_dt.tzinfo:
-                        reset_dt = reset_dt.replace(tzinfo=None)
-                    
-                    # If we've passed the next reset timestamp, reset counter and set a new future reset.
-                    if reset_dt <= now:
-                        next_reset = _first_day_next_month(now)
-                        cursor.execute("""
-                            UPDATE users 
-                            SET executions_used_this_month = 1,
-                                executions_reset_date = ?
-                            WHERE id = ?
-                        """, (next_reset.isoformat(), user_id))
-                    else:
-                        # Just increment counter
-                        cursor.execute("""
-                            UPDATE users 
-                            SET executions_used_this_month = COALESCE(executions_used_this_month, 0) + 1
-                            WHERE id = ?
-                        """, (user_id,))
-                except (ValueError, AttributeError):
-                    # Invalid date format, reset counter and set next reset date to start of next month.
+        else:
+            # Paid subscription - increment monthly counter
+            subscription_plan = subscription.get("subscription_plan")
+            if subscription_plan in ("basic", "plus", "pro"):
+                # last_reset_date stores the *next* time we reset the monthly counter (UTC).
+                reset_date = usage.get("last_reset_date")
+                now = datetime.utcnow()
+                
+                if not reset_date:
+                    # First execution: set next reset date to start of next month.
                     next_reset = _first_day_next_month(now)
                     cursor.execute("""
-                        UPDATE users 
-                        SET executions_used_this_month = 1,
-                            executions_reset_date = ?
-                        WHERE id = ?
+                        UPDATE usage 
+                        SET monthly_workflows_used = 1,
+                            last_reset_date = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = ?
                     """, (next_reset.isoformat(), user_id))
+                else:
+                    # Parse next reset date and check if we need to reset
+                    try:
+                        reset_dt = datetime.fromisoformat(reset_date.replace('Z', '+00:00'))
+                        if reset_dt.tzinfo:
+                            reset_dt = reset_dt.replace(tzinfo=None)
+                        
+                        # If we've passed the next reset timestamp, reset counter and set a new future reset.
+                        if reset_dt <= now:
+                            next_reset = _first_day_next_month(now)
+                            cursor.execute("""
+                                UPDATE usage 
+                                SET monthly_workflows_used = 1,
+                                    last_reset_date = ?,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE user_id = ?
+                            """, (next_reset.isoformat(), user_id))
+                        else:
+                            # Just increment counter
+                            cursor.execute("""
+                                UPDATE usage 
+                                SET monthly_workflows_used = monthly_workflows_used + 1,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE user_id = ?
+                            """, (user_id,))
+                    except (ValueError, AttributeError):
+                        # Invalid date format, reset counter and set next reset date to start of next month.
+                        next_reset = _first_day_next_month(now)
+                        cursor.execute("""
+                            UPDATE usage 
+                            SET monthly_workflows_used = 1,
+                                last_reset_date = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = ?
+                        """, (next_reset.isoformat(), user_id))
         
         conn.commit()
 
@@ -585,8 +722,22 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
     if not user:
         return False, "User not found"
     
-    subscription_plan = user.get("subscription_plan")
-    subscription_status = user.get("subscription_status")
+    subscription = get_user_subscription(user_id)
+    usage = get_user_usage(user_id)
+    
+    if not usage:
+        return False, "Usage record not found"
+    
+    # If no subscription, user is on trial
+    if not subscription:
+        trial_used = usage.get("trial_workflows_used", 0)
+        if trial_used >= 5:
+            return False, "Free trial limit reached. Please upgrade to continue using AI workflows."
+        return True, "OK"
+    
+    # Paid subscription - check status and limits
+    subscription_plan = subscription.get("subscription_plan")
+    subscription_status = subscription.get("subscription_status")
     
     # Check if subscription is active
     if subscription_plan in ("basic", "plus", "pro"):
@@ -594,7 +745,7 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
             return False, "Subscription is not active. Please renew your subscription."
         
         # Check subscription end date
-        end_date = user.get("subscription_end_date")
+        end_date = subscription.get("current_period_end")
         if end_date:
             try:
                 from datetime import datetime
@@ -606,23 +757,18 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
                     return False, "Subscription has expired. Please renew your subscription."
             except (ValueError, AttributeError):
                 pass  # Invalid date, continue check
-    
-    # Check trial limit
-    if subscription_plan == "trial" or subscription_plan is None:
-        trial_used = user.get("trial_executions_used", 0)
-        if trial_used >= 5:
-            return False, "Free trial limit reached. Please upgrade to continue using AI workflows."
-    
-    # Check plan limits using monthly_workflow_limit from Stripe metadata
-    if subscription_plan in ("basic", "plus", "pro"):
-        monthly_limit = user.get("monthly_workflow_limit")
+        
+        # Check monthly limit - fetch from Stripe
+        stripe_price_id = subscription.get("stripe_price_id")
+        monthly_limit = get_monthly_workflow_limit_from_stripe(stripe_price_id)
+        
         if monthly_limit is not None:
-            executions_used = user.get("executions_used_this_month", 0)
+            executions_used = usage.get("monthly_workflows_used", 0)
             if executions_used >= monthly_limit:
                 return False, f"Monthly execution limit reached ({executions_used}/{monthly_limit}). Please upgrade your plan for more executions."
         else:
             # Fallback to default limits if metadata not set (shouldn't happen in production)
-            logger.warning(f"User {user_id} has subscription plan {subscription_plan} but no monthly_workflow_limit set")
+            logger.warning(f"User {user_id} has subscription plan {subscription_plan} but could not fetch monthly_workflow_limit from Stripe")
             if subscription_plan == "basic":
                 monthly_limit = 500
             elif subscription_plan == "plus":
@@ -632,7 +778,7 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
             else:
                 monthly_limit = 0
             
-            executions_used = user.get("executions_used_this_month", 0)
+            executions_used = usage.get("monthly_workflows_used", 0)
             if executions_used >= monthly_limit:
                 return False, f"Monthly execution limit reached ({executions_used}/{monthly_limit}). Please upgrade your plan for more executions."
     
@@ -643,51 +789,70 @@ def update_user_subscription(
     user_id: str,
     plan: Optional[str] = None,
     status: Optional[str] = None,
-    stripe_customer_id: Optional[str] = None,
     stripe_subscription_id: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    monthly_workflow_limit: Optional[int] = None
+    stripe_price_id: Optional[str] = None,
+    current_period_start: Optional[str] = None,
+    current_period_end: Optional[str] = None,
+    cancel_at_period_end: Optional[bool] = None
 ) -> None:
-    """Update user subscription information."""
+    """Update user subscription information (Stripe mirror only, no usage fields)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        # Check if subscription exists
+        cursor.execute("SELECT user_id FROM subscriptions WHERE user_id = ?", (user_id,))
+        exists = cursor.fetchone()
+        
+        if not exists:
+            # Subscription must have stripe_subscription_id
+            if not stripe_subscription_id:
+                logger.warning(f"Cannot create subscription for user {user_id} without stripe_subscription_id")
+                return
+            
+            # Create subscription if it doesn't exist
+            cursor.execute("""
+                INSERT INTO subscriptions (user_id, stripe_subscription_id, plan, status, stripe_price_id, cancel_at_period_end)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, stripe_subscription_id, plan, status, stripe_price_id, 1 if cancel_at_period_end else 0))
+            conn.commit()
+            return
         
         updates = []
         params = []
         
         if plan is not None:
-            updates.append("subscription_plan = ?")
+            updates.append("plan = ?")
             params.append(plan)
         
         if status is not None:
-            updates.append("subscription_status = ?")
+            updates.append("status = ?")
             params.append(status)
-        
-        if stripe_customer_id is not None:
-            updates.append("stripe_customer_id = ?")
-            params.append(stripe_customer_id)
         
         if stripe_subscription_id is not None:
             updates.append("stripe_subscription_id = ?")
             params.append(stripe_subscription_id)
         
-        if start_date is not None:
-            updates.append("subscription_start_date = ?")
-            params.append(start_date)
+        if stripe_price_id is not None:
+            updates.append("stripe_price_id = ?")
+            params.append(stripe_price_id)
         
-        if end_date is not None:
-            updates.append("subscription_end_date = ?")
-            params.append(end_date)
+        if current_period_start is not None:
+            updates.append("current_period_start = ?")
+            params.append(current_period_start)
         
-        if monthly_workflow_limit is not None:
-            updates.append("monthly_workflow_limit = ?")
-            params.append(monthly_workflow_limit)
+        if current_period_end is not None:
+            updates.append("current_period_end = ?")
+            params.append(current_period_end)
+        
+        if cancel_at_period_end is not None:
+            updates.append("cancel_at_period_end = ?")
+            params.append(1 if cancel_at_period_end else 0)
         
         if updates:
+            updates.append("updated_at = CURRENT_TIMESTAMP")
             params.append(user_id)
             cursor.execute(
-                f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+                f"UPDATE subscriptions SET {', '.join(updates)} WHERE user_id = ?",
                 params
             )
             conn.commit()
@@ -698,14 +863,14 @@ def get_user_by_stripe_subscription_id(stripe_subscription_id: str) -> Optional[
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, email, hashed_password, email_verified,
-                   email_verification_token, email_verification_token_expires,
-                   last_confirmation_email_sent,
-                   subscription_plan, subscription_status, trial_executions_used,
-                   subscription_start_date, subscription_end_date,
-                   executions_used_this_month, executions_reset_date,
-                   stripe_customer_id, stripe_subscription_id, monthly_workflow_limit
-            FROM users WHERE stripe_subscription_id = ?
+            SELECT u.id, u.email, u.hashed_password, u.email_verified,
+                   u.email_verification_token, u.email_verification_token_expires,
+                   s.plan as subscription_plan, s.status as subscription_status, 
+                   s.stripe_subscription_id, s.stripe_price_id,
+                   s.current_period_start, s.current_period_end, s.cancel_at_period_end
+            FROM users u
+            INNER JOIN subscriptions s ON u.id = s.user_id
+            WHERE s.stripe_subscription_id = ?
         """, (stripe_subscription_id,))
         row = cursor.fetchone()
         
@@ -718,17 +883,13 @@ def get_user_by_stripe_subscription_id(stripe_subscription_id: str) -> Optional[
                 "email_verified": bool(email_verified_val) if email_verified_val is not None else True,
                 "email_verification_token": row["email_verification_token"],
                 "email_verification_token_expires": row["email_verification_token_expires"],
-                "last_confirmation_email_sent": row["last_confirmation_email_sent"],
                 "subscription_plan": row["subscription_plan"],
                 "subscription_status": row["subscription_status"],
-                "trial_executions_used": row["trial_executions_used"] or 0,
-                "subscription_start_date": row["subscription_start_date"],
-                "subscription_end_date": row["subscription_end_date"],
-                "executions_used_this_month": row["executions_used_this_month"] or 0,
-                "executions_reset_date": row["executions_reset_date"],
-                "stripe_customer_id": row["stripe_customer_id"],
                 "stripe_subscription_id": row["stripe_subscription_id"],
-                "monthly_workflow_limit": row["monthly_workflow_limit"]
+                "stripe_price_id": row["stripe_price_id"],
+                "current_period_start": row["current_period_start"],
+                "current_period_end": row["current_period_end"],
+                "cancel_at_period_end": bool(row["cancel_at_period_end"]) if row["cancel_at_period_end"] is not None else False
             }
         return None
 
@@ -748,10 +909,11 @@ def reset_monthly_executions(user_id: str) -> None:
             next_reset = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
         
         cursor.execute("""
-            UPDATE users 
-            SET executions_used_this_month = 0,
-                executions_reset_date = ?
-            WHERE id = ?
+            UPDATE usage 
+            SET monthly_workflows_used = 0,
+                last_reset_date = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
         """, (next_reset.isoformat(), user_id))
         conn.commit()
 

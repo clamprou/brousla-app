@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime
 
 from app.auth import get_current_user
-from app.database import check_user_can_execute, get_user_subscription
+from app.database import check_user_can_execute, get_user_subscription, get_user_usage, get_monthly_workflow_limit_from_stripe
 
 
 def check_subscription_required(current_user: dict = Depends(get_current_user)) -> dict:
@@ -43,58 +43,77 @@ def get_subscription_status(user_id: str) -> dict:
         dict with subscription information
     """
     subscription = get_user_subscription(user_id)
-    if not subscription:
+    usage = get_user_usage(user_id)
+    
+    if not usage:
         return {
             "subscription_plan": None,
             "subscription_status": None,
-            "trial_executions_used": 0,
-            "executions_used_this_month": 0,
+            "trial_workflows_used": 0,
+            "monthly_workflows_used": 0,
             "can_execute": False,
-            "message": "No subscription found"
+            "message": "Usage record not found"
         }
     
     can_execute, message = check_user_can_execute(user_id)
     
-    # Determine usage limits
-    usage_info = {}
-    if subscription["subscription_plan"] == "trial" or subscription["subscription_plan"] is None:
+    # If no subscription, user is on trial
+    if not subscription:
+        trial_used = usage.get("trial_workflows_used", 0)
         usage_info = {
             "type": "trial",
-            "used": subscription["trial_executions_used"],
+            "used": trial_used,
             "limit": 5,
-            "remaining": max(0, 5 - subscription["trial_executions_used"])
+            "remaining": max(0, 5 - trial_used)
         }
-    elif subscription["subscription_plan"] in ("basic", "plus", "pro"):
-        # Use monthly_workflow_limit from Stripe metadata, fallback to defaults if not set
-        monthly_limit = subscription.get("monthly_workflow_limit")
-        if monthly_limit is None:
-            # Fallback to default limits (shouldn't happen if Stripe metadata is set correctly)
-            if subscription["subscription_plan"] == "basic":
-                monthly_limit = 500
-            elif subscription["subscription_plan"] == "plus":
-                monthly_limit = 2000
-            elif subscription["subscription_plan"] == "pro":
-                monthly_limit = 5000
-            else:
-                monthly_limit = 0
         
-        executions_used = subscription["executions_used_this_month"]
-        usage_info = {
-            "type": "monthly",
-            "used": executions_used,
-            "limit": monthly_limit,
-            "remaining": max(0, monthly_limit - executions_used)
+        return {
+            "subscription_plan": None,
+            "subscription_status": None,
+            "trial_workflows_used": trial_used,
+            "monthly_workflows_used": 0,
+            "current_period_start": None,
+            "current_period_end": None,
+            "last_reset_date": usage.get("last_reset_date"),
+            "can_execute": can_execute,
+            "message": message,
+            "usage": usage_info
         }
     
+    # Paid subscription
+    subscription_plan = subscription.get("subscription_plan")
+    monthly_used = usage.get("monthly_workflows_used", 0)
+    
+    # Fetch monthly limit from Stripe
+    stripe_price_id = subscription.get("stripe_price_id")
+    monthly_limit = get_monthly_workflow_limit_from_stripe(stripe_price_id)
+    
+    if monthly_limit is None:
+        # Fallback to default limits (shouldn't happen if Stripe metadata is set correctly)
+        if subscription_plan == "basic":
+            monthly_limit = 500
+        elif subscription_plan == "plus":
+            monthly_limit = 2000
+        elif subscription_plan == "pro":
+            monthly_limit = 5000
+        else:
+            monthly_limit = 0
+    
+    usage_info = {
+        "type": "monthly",
+        "used": monthly_used,
+        "limit": monthly_limit,
+        "remaining": max(0, monthly_limit - monthly_used)
+    }
+    
     return {
-        "subscription_plan": subscription["subscription_plan"],
-        "subscription_status": subscription["subscription_status"],
-        "trial_executions_used": subscription["trial_executions_used"],
-        "executions_used_this_month": subscription["executions_used_this_month"],
-        "subscription_start_date": subscription["subscription_start_date"],
-        "subscription_end_date": subscription["subscription_end_date"],
-        "executions_reset_date": subscription["executions_reset_date"],
-        "monthly_workflow_limit": subscription.get("monthly_workflow_limit"),
+        "subscription_plan": subscription_plan,
+        "subscription_status": subscription.get("subscription_status"),
+        "trial_workflows_used": usage.get("trial_workflows_used", 0),
+        "monthly_workflows_used": monthly_used,
+        "current_period_start": subscription.get("current_period_start"),
+        "current_period_end": subscription.get("current_period_end"),
+        "last_reset_date": usage.get("last_reset_date"),
         "can_execute": can_execute,
         "message": message,
         "usage": usage_info

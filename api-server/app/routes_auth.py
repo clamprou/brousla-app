@@ -19,7 +19,6 @@ from app.auth import (
 from app.database import (
     get_user_by_email, create_user, update_user_email_verified,
     get_user_by_verification_token, update_user_verification_token,
-    update_user_last_confirmation_email_sent, get_user_last_confirmation_email_sent
 )
 from app.email_service import send_confirmation_email
 from app.config import settings
@@ -252,30 +251,12 @@ async def resend_confirmation(request: ResendConfirmationRequest):
             detail="Email address is already verified"
         )
     
-    # Check cooldown period (5 minutes = 300 seconds)
-    last_sent = get_user_last_confirmation_email_sent(user_record["id"])
-    if last_sent:
-        last_sent_dt = datetime.fromisoformat(last_sent)
-        time_since_last = (datetime.utcnow() - last_sent_dt).total_seconds()
-        
-        if time_since_last < 300:  # 5 minutes
-            remaining_seconds = int(300 - time_since_last)
-            remaining_minutes = remaining_seconds // 60
-            remaining_secs = remaining_seconds % 60
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Please wait {remaining_minutes} minute(s) and {remaining_secs} second(s) before requesting another confirmation email."
-            )
-    
     # Generate new verification token
     verification_token = str(uuid.uuid4())
     token_expires = (datetime.utcnow() + timedelta(hours=24)).isoformat()
     
     # Update token in database
     update_user_verification_token(user_record["id"], verification_token, token_expires)
-    
-    # Update last sent timestamp
-    update_user_last_confirmation_email_sent(user_record["id"], datetime.utcnow().isoformat())
     
     # Generate confirmation URL - point to backend, which will redirect to frontend
     confirmation_url = f"{settings.backend_base_url}/auth/confirm-email?token={verification_token}"
