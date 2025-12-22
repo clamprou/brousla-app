@@ -471,6 +471,12 @@ def increment_user_execution_count(user_id: str) -> None:
         
         subscription_plan = user.get("subscription_plan")
         
+        def _first_day_next_month(dt: datetime) -> datetime:
+            """Return UTC timestamp for next month's 1st day at 00:00:00."""
+            if dt.month == 12:
+                return dt.replace(year=dt.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return dt.replace(month=dt.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        
         if subscription_plan == "trial" or subscription_plan is None:
             # Increment trial executions (None is treated as trial, matching check_user_can_execute logic)
             # Get current count before incrementing
@@ -487,34 +493,29 @@ def increment_user_execution_count(user_id: str) -> None:
             if new_trial_used >= 5:
                 _deactivate_all_user_workflows(user_id)
         elif subscription_plan in ("basic", "plus", "pro"):
-            # Check if we need to reset monthly counter
+            # executions_reset_date stores the *next* time we reset the monthly counter (UTC).
             reset_date = user.get("executions_reset_date")
             now = datetime.utcnow()
             
             if not reset_date:
-                # First execution, set reset date to now
-                reset_date = now
+                # First execution: set next reset date to start of next month.
+                next_reset = _first_day_next_month(now)
                 cursor.execute("""
                     UPDATE users 
                     SET executions_used_this_month = 1,
                         executions_reset_date = ?
                     WHERE id = ?
-                """, (reset_date.isoformat(), user_id))
+                """, (next_reset.isoformat(), user_id))
             else:
-                # Parse reset date and check if we need to reset
+                # Parse next reset date and check if we need to reset
                 try:
                     reset_dt = datetime.fromisoformat(reset_date.replace('Z', '+00:00'))
                     if reset_dt.tzinfo:
                         reset_dt = reset_dt.replace(tzinfo=None)
                     
-                    # If reset date is in the past, reset counter
-                    if reset_dt < now:
-                        # Calculate next month's reset date
-                        if reset_dt.month == 12:
-                            next_reset = reset_dt.replace(year=reset_dt.year + 1, month=1, day=1)
-                        else:
-                            next_reset = reset_dt.replace(month=reset_dt.month + 1, day=1)
-                        
+                    # If we've passed the next reset timestamp, reset counter and set a new future reset.
+                    if reset_dt <= now:
+                        next_reset = _first_day_next_month(now)
                         cursor.execute("""
                             UPDATE users 
                             SET executions_used_this_month = 1,
@@ -529,13 +530,14 @@ def increment_user_execution_count(user_id: str) -> None:
                             WHERE id = ?
                         """, (user_id,))
                 except (ValueError, AttributeError):
-                    # Invalid date format, reset to now
+                    # Invalid date format, reset counter and set next reset date to start of next month.
+                    next_reset = _first_day_next_month(now)
                     cursor.execute("""
                         UPDATE users 
                         SET executions_used_this_month = 1,
                             executions_reset_date = ?
                         WHERE id = ?
-                    """, (now.isoformat(), user_id))
+                    """, (next_reset.isoformat(), user_id))
         
         conn.commit()
 

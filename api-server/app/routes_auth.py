@@ -1,6 +1,7 @@
 """Authentication routes: register, login, and user info."""
 import uuid
 import secrets
+import html
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
@@ -452,6 +453,7 @@ async def google_callback(
     # Check for OAuth errors
     if error:
         error_message = f"Google OAuth error: {error}"
+        safe_error_for_html = html.escape(error or "", quote=True)
         # Store error in state for polling if state exists
         if state in _oauth_states:
             state_data = _oauth_states.get(state)
@@ -500,7 +502,7 @@ async def google_callback(
 <body>
     <div class="container">
         <h2>Sign-In Error</h2>
-        <p>{error}</p>
+        <p>{safe_error_for_html}</p>
         <p style="font-size: 0.9em; opacity: 0.8;">You can close this window.</p>
     </div>
     <script>
