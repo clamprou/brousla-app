@@ -181,7 +181,7 @@ export default function Profile() {
   const handleCancel = async () => {
     if (!token) return
     
-    if (!window.confirm('Are you sure you want to cancel your subscription? It will remain active until the end of the current billing period.')) {
+    if (!window.confirm('Are you sure you want to delete your subscription? It will remain active until the end of the current billing period.')) {
       return
     }
     
@@ -376,7 +376,7 @@ export default function Profile() {
                                         disabled={isCancelling}
                                         className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
-                                        {isCancelling ? 'Cancelling…' : 'Cancel plan'}
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
                                       </button>
                                     </div>
                                   )}
@@ -459,7 +459,7 @@ export default function Profile() {
                                         disabled={isCancelling}
                                         className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
-                                        {isCancelling ? 'Cancelling…' : 'Cancel plan'}
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
                                       </button>
                                     </div>
                                   )}
@@ -537,7 +537,7 @@ export default function Profile() {
                                         disabled={isCancelling}
                                         className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
-                                        {isCancelling ? 'Cancelling…' : 'Cancel plan'}
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
                                       </button>
                                     </div>
                                   )}
