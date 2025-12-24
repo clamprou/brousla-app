@@ -109,6 +109,7 @@ def get_subscription_status(user_id: str) -> dict:
     return {
         "subscription_plan": subscription_plan,
         "subscription_status": subscription.get("subscription_status"),
+        "cancel_at_period_end": subscription.get("cancel_at_period_end", False),
         "trial_workflows_used": usage.get("trial_workflows_used", 0),
         "monthly_workflows_used": monthly_used,
         "current_period_start": subscription.get("current_period_start"),

@@ -504,3 +504,36 @@ export async function cancelSubscription(token) {
   return await response.json()
 }
 
+/**
+ * Completely cancel the current user's subscription and restore trial status
+ * @param {string} token - JWT token
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function cancelSubscriptionCompletely(token) {
+  const requestUrl = `${BASE_API_URL}/api/subscription/cancel-completely`
+  
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    let errorData = null
+    try {
+      errorData = JSON.parse(errorText)
+    } catch (e) {
+      errorData = { detail: errorText }
+    }
+    
+    const error = new Error(errorData.detail || 'Failed to cancel subscription completely')
+    error.status = response.status
+    throw error
+  }
+
+  return await response.json()
+}
+

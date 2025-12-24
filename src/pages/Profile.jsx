@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, MoreVertical } from 'lucide-react'
 import { BASE_API_URL } from '../config/api.js'
-import { createCheckoutSession, cancelSubscription } from '../utils/apiClient.js'
+import { createCheckoutSession, cancelSubscription, cancelSubscriptionCompletely } from '../utils/apiClient.js'
 import StripeCheckoutModal from '../components/StripeCheckoutModal.jsx'
+import ConfirmationModal from '../components/ConfirmationModal.jsx'
+import SuccessModal from '../components/SuccessModal.jsx'
 
 export default function Profile() {
   const { token, logout, subscriptionStatus, fetchSubscriptionStatus } = useAuth()
@@ -12,9 +14,14 @@ export default function Profile() {
   const [error, setError] = useState(null)
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
+  const [isCancellingCompletely, setIsCancellingCompletely] = useState(false)
   const [showCheckoutModal, setShowCheckoutModal] = useState(false)
   const [checkoutUrl, setCheckoutUrl] = useState(null)
   const [openPlanMenu, setOpenPlanMenu] = useState(null) // 'basic' | 'plus' | 'pro' | null
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [showCancelCompletelyConfirm, setShowCancelCompletelyConfirm] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
   const fetchingRef = useRef(false)
 
   // Refresh subscription status when Profile page is viewed
@@ -181,15 +188,12 @@ export default function Profile() {
   const handleCancel = async () => {
     if (!token) return
     
-    if (!window.confirm('Are you sure you want to delete your subscription? It will remain active until the end of the current billing period.')) {
-      return
-    }
-    
     setIsCancelling(true)
     try {
       const result = await cancelSubscription(token)
       setError(null)
-      alert(result.message || 'Subscription cancelled successfully')
+      setSuccessMessage(result.message || 'Subscription cancelled successfully')
+      setShowSuccessModal(true)
       // Refresh subscription status
       if (fetchSubscriptionStatus) {
         fetchSubscriptionStatus()
@@ -198,6 +202,26 @@ export default function Profile() {
       setError(err.message || 'Failed to cancel subscription')
     } finally {
       setIsCancelling(false)
+    }
+  }
+
+  const handleCancelCompletely = async () => {
+    if (!token) return
+    
+    setIsCancellingCompletely(true)
+    try {
+      const result = await cancelSubscriptionCompletely(token)
+      setError(null)
+      setSuccessMessage(result.message || 'Subscription cancelled completely')
+      setShowSuccessModal(true)
+      // Refresh subscription status
+      if (fetchSubscriptionStatus) {
+        fetchSubscriptionStatus()
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to cancel subscription completely')
+    } finally {
+      setIsCancellingCompletely(false)
     }
   }
 
@@ -241,6 +265,39 @@ export default function Profile() {
         checkoutUrl={checkoutUrl}
         onSuccess={handleCheckoutSuccess}
         onCancel={handleCheckoutCancel}
+      />
+
+      {/* Cancel Subscription Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={handleCancel}
+        title="Cancel Subscription"
+        message="Are you sure you want to cancel your subscription? It will remain active until the end of the current billing period."
+        confirmText="Cancel Subscription"
+        cancelText="Keep Subscription"
+        type="danger"
+      />
+
+      {/* Cancel Completely Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showCancelCompletelyConfirm}
+        onClose={() => setShowCancelCompletelyConfirm(false)}
+        onConfirm={handleCancelCompletely}
+        title="Cancel Subscription Completely"
+        message="Are you sure you want to cancel your subscription completely? This will immediately cancel your subscription and restore you to trial status. Your trial usage count will be preserved."
+        confirmText="Cancel Completely"
+        cancelText="Keep Subscription"
+        type="danger"
+      />
+
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        title="Success"
+        message={successMessage}
+        buttonText="OK"
       />
 
       <div className="max-w-2xl mx-auto">
@@ -366,18 +423,33 @@ export default function Profile() {
                                       role="menu"
                                       className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
                                     >
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                          setOpenPlanMenu(null)
-                                          handleCancel()
-                                        }}
-                                        disabled={isCancelling}
-                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
-                                      </button>
+                                      {subscriptionStatus?.cancel_at_period_end ? (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelCompletelyConfirm(true)
+                                          }}
+                                          disabled={isCancellingCompletely}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancellingCompletely ? 'Cancelling…' : 'Cancel completely'}
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelConfirm(true)
+                                          }}
+                                          disabled={isCancelling}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancelling ? 'Cancelling…' : 'Cancel subscription'}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -449,18 +521,33 @@ export default function Profile() {
                                       role="menu"
                                       className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
                                     >
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                          setOpenPlanMenu(null)
-                                          handleCancel()
-                                        }}
-                                        disabled={isCancelling}
-                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
-                                      </button>
+                                      {subscriptionStatus?.cancel_at_period_end ? (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelCompletelyConfirm(true)
+                                          }}
+                                          disabled={isCancellingCompletely}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancellingCompletely ? 'Cancelling…' : 'Cancel completely'}
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelConfirm(true)
+                                          }}
+                                          disabled={isCancelling}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancelling ? 'Cancelling…' : 'Cancel subscription'}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -527,18 +614,33 @@ export default function Profile() {
                                       role="menu"
                                       className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
                                     >
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        onClick={() => {
-                                          setOpenPlanMenu(null)
-                                          handleCancel()
-                                        }}
-                                        disabled={isCancelling}
-                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
-                                      </button>
+                                      {subscriptionStatus?.cancel_at_period_end ? (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelCompletelyConfirm(true)
+                                          }}
+                                          disabled={isCancellingCompletely}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancellingCompletely ? 'Cancelling…' : 'Cancel completely'}
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            setOpenPlanMenu(null)
+                                            setShowCancelConfirm(true)
+                                          }}
+                                          disabled={isCancelling}
+                                          className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {isCancelling ? 'Cancelling…' : 'Cancel subscription'}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </div>

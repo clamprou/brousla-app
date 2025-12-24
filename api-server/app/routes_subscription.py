@@ -221,6 +221,12 @@ async def cancel_subscription(current_user: dict = Depends(get_current_user)):
             cancel_at_period_end=True
         )
         
+        # Update database immediately (don't wait for webhook)
+        update_user_subscription(
+            user_id=user_id,
+            cancel_at_period_end=True
+        )
+        
         logger.info(f"Cancelled subscription {stripe_subscription_id} for user {user_id} (at period end)")
         
         return {
@@ -235,6 +241,96 @@ async def cancel_subscription(current_user: dict = Depends(get_current_user)):
         )
     except Exception as e:
         logger.error(f"Error cancelling subscription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel subscription: {str(e)}"
+        )
+
+
+@router.post("/cancel-completely")
+async def cancel_subscription_completely(current_user: dict = Depends(get_current_user)):
+    """
+    Completely cancel the current user's subscription and restore trial status.
+    This immediately cancels the subscription in Stripe, removes it from the database,
+    and restores the user to trial status while preserving their trial usage count.
+    
+    Returns:
+        { "success": bool, "message": str }
+    """
+    user_id = current_user["id"]
+    
+    # Get user's subscription to find Stripe subscription ID
+    subscription_data = get_user_subscription(user_id)
+    
+    if not subscription_data or not subscription_data.get("stripe_subscription_id"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active subscription found"
+        )
+    
+    stripe_subscription_id = subscription_data["stripe_subscription_id"]
+    
+    try:
+        from app.config import settings
+        import os
+        
+        stripe.api_key = settings.stripe_secret_key or os.getenv("STRIPE_SECRET_KEY", "")
+        
+        if not stripe.api_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Stripe not configured"
+            )
+        
+        # Cancel the subscription immediately (not at period end)
+        try:
+            subscription = stripe.Subscription.delete(stripe_subscription_id)
+            logger.info(f"Immediately cancelled subscription {stripe_subscription_id} for user {user_id}")
+        except stripe.error.StripeError as e:
+            # If subscription is already cancelled, try to modify it first
+            if "No such subscription" in str(e) or "already been deleted" in str(e):
+                logger.info(f"Subscription {stripe_subscription_id} already deleted in Stripe")
+            else:
+                # Try to cancel at period end first, then delete
+                try:
+                    stripe.Subscription.modify(
+                        stripe_subscription_id,
+                        cancel_at_period_end=True
+                    )
+                    subscription = stripe.Subscription.delete(stripe_subscription_id)
+                except Exception as e2:
+                    logger.warning(f"Could not delete subscription {stripe_subscription_id}: {e2}")
+                    # Continue anyway - we'll delete from our database
+        
+        # Delete subscription from database and reset monthly workflows
+        from app.database import get_db_connection
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Delete subscription
+            cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+            # Reset monthly workflows used (preserve trial workflows used)
+            cursor.execute("""
+                UPDATE usage 
+                SET monthly_workflows_used = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """, (user_id,))
+            conn.commit()
+        
+        logger.info(f"Completely cancelled subscription for user {user_id}, restored to trial status")
+        
+        return {
+            "success": True,
+            "message": "Subscription cancelled completely. You have been restored to trial status."
+        }
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error cancelling subscription completely: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel subscription: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error cancelling subscription completely: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel subscription: {str(e)}"
