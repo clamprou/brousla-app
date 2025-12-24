@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, Check, ExternalLink } from 'lucide-react'
+import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, MoreVertical } from 'lucide-react'
 import { BASE_API_URL } from '../config/api.js'
 import { createCheckoutSession, cancelSubscription } from '../utils/apiClient.js'
 import StripeCheckoutModal from '../components/StripeCheckoutModal.jsx'
@@ -14,6 +14,7 @@ export default function Profile() {
   const [isCancelling, setIsCancelling] = useState(false)
   const [showCheckoutModal, setShowCheckoutModal] = useState(false)
   const [checkoutUrl, setCheckoutUrl] = useState(null)
+  const [openPlanMenu, setOpenPlanMenu] = useState(null) // 'basic' | 'plus' | 'pro' | null
   const fetchingRef = useRef(false)
 
   // Refresh subscription status when Profile page is viewed
@@ -26,6 +27,32 @@ export default function Profile() {
   }, [token])
 
   // Note: Stripe checkout event listeners are now handled by StripeCheckoutListener component
+
+  // Close plan actions menu on outside click / Escape
+  useEffect(() => {
+    if (!openPlanMenu) return
+
+    const handleMouseDown = (e) => {
+      const target = e.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[data-plan-menu-root="true"]')) return
+      setOpenPlanMenu(null)
+    }
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setOpenPlanMenu(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [openPlanMenu])
 
   useEffect(() => {
     if (!token) {
@@ -154,7 +181,7 @@ export default function Profile() {
   const handleCancel = async () => {
     if (!token) return
     
-    if (!window.confirm('Are you sure you want to cancel your subscription? It will remain active until the end of the current billing period.')) {
+    if (!window.confirm('Are you sure you want to delete your subscription? It will remain active until the end of the current billing period.')) {
       return
     }
     
@@ -286,11 +313,11 @@ export default function Profile() {
                       <span className="text-sm text-gray-400">Usage</span>
                       <span className="text-sm font-medium text-gray-200">{getUsageText()}</span>
                     </div>
-                    {subscriptionStatus.subscription_end_date && (
+                    {subscriptionStatus.current_period_end && (
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-sm font-medium text-gray-300">Renewal Date</span>
                         <span className="text-sm font-medium text-gray-200">
-                          {new Date(subscriptionStatus.subscription_end_date).toLocaleDateString('en-US', {
+                          {new Date(subscriptionStatus.current_period_end).toLocaleDateString('en-US', {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric'
@@ -312,13 +339,48 @@ export default function Profile() {
                         
                         return (
                           <div className={`bg-gray-800 border rounded-lg p-4 ${isCurrentPlan ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-gray-700'}`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <Zap className="h-4 w-4 text-blue-400" />
-                              <h4 className="font-semibold text-gray-200">Basic</h4>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-blue-400" />
+                                <h4 className="font-semibold text-gray-200">Basic</h4>
+                                {isCurrentPlan && (
+                                  <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full text-xs">
+                                    Current
+                                  </span>
+                                )}
+                              </div>
                               {isCurrentPlan && (
-                                <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full text-xs">
-                                  Current
-                                </span>
+                                <div className="relative" data-plan-menu-root="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenPlanMenu(openPlanMenu === 'basic' ? null : 'basic')}
+                                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                                    aria-label="Plan actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={openPlanMenu === 'basic'}
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </button>
+                                  {openPlanMenu === 'basic' && (
+                                    <div
+                                      role="menu"
+                                      className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setOpenPlanMenu(null)
+                                          handleCancel()
+                                        }}
+                                        disabled={isCancelling}
+                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className="mb-2">
@@ -326,15 +388,7 @@ export default function Profile() {
                               <span className="text-xs text-gray-400">/month</span>
                             </div>
                             <p className="text-sm text-gray-400 mb-3">500 executions/month</p>
-                            {isCurrentPlan ? (
-                              <button
-                                onClick={handleCancel}
-                                disabled={isCancelling}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {isCancelling ? 'Cancelling...' : 'Cancel Plan'}
-                              </button>
-                            ) : isBigger ? (
+                            {isBigger ? (
                               <button
                                 onClick={() => handleUpgrade('basic')}
                                 disabled={isCreatingCheckout}
@@ -348,7 +402,7 @@ export default function Profile() {
                                 className="w-full px-4 py-2 bg-gray-700 text-gray-500 rounded-lg font-medium cursor-not-allowed"
                                 title="Cannot downgrade to a smaller plan"
                               >
-                                Current Plan Higher
+                                {isCurrentPlan ? 'Current plan' : 'Current Plan Higher'}
                               </button>
                             )}
                           </div>
@@ -363,18 +417,53 @@ export default function Profile() {
                         
                         return (
                           <div className={`bg-gray-800 border rounded-lg p-4 ${isCurrentPlan ? 'border-purple-500 ring-2 ring-purple-500/20' : 'border-gray-700'}`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <Crown className="h-4 w-4 text-purple-400" />
-                              <h4 className="font-semibold text-gray-200">Plus</h4>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Crown className="h-4 w-4 text-purple-400" />
+                                <h4 className="font-semibold text-gray-200">Plus</h4>
+                                {isCurrentPlan && (
+                                  <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full text-xs">
+                                    Current
+                                  </span>
+                                )}
+                                {!isCurrentPlan && (
+                                  <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full text-xs">
+                                    Popular
+                                  </span>
+                                )}
+                              </div>
                               {isCurrentPlan && (
-                                <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full text-xs">
-                                  Current
-                                </span>
-                              )}
-                              {!isCurrentPlan && (
-                                <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full text-xs">
-                                  Popular
-                                </span>
+                                <div className="relative" data-plan-menu-root="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenPlanMenu(openPlanMenu === 'plus' ? null : 'plus')}
+                                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                                    aria-label="Plan actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={openPlanMenu === 'plus'}
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </button>
+                                  {openPlanMenu === 'plus' && (
+                                    <div
+                                      role="menu"
+                                      className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setOpenPlanMenu(null)
+                                          handleCancel()
+                                        }}
+                                        disabled={isCancelling}
+                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className="mb-2">
@@ -382,15 +471,7 @@ export default function Profile() {
                               <span className="text-xs text-gray-400">/month</span>
                             </div>
                             <p className="text-sm text-gray-400 mb-3">2000 executions/month</p>
-                            {isCurrentPlan ? (
-                              <button
-                                onClick={handleCancel}
-                                disabled={isCancelling}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {isCancelling ? 'Cancelling...' : 'Cancel Plan'}
-                              </button>
-                            ) : isBigger ? (
+                            {isBigger ? (
                               <button
                                 onClick={() => handleUpgrade('plus')}
                                 disabled={isCreatingCheckout}
@@ -404,7 +485,7 @@ export default function Profile() {
                                 className="w-full px-4 py-2 bg-gray-700 text-gray-500 rounded-lg font-medium cursor-not-allowed"
                                 title="Cannot downgrade to a smaller plan"
                               >
-                                Current Plan Higher
+                                {isCurrentPlan ? 'Current plan' : 'Current Plan Higher'}
                               </button>
                             )}
                           </div>
@@ -419,13 +500,48 @@ export default function Profile() {
                         
                         return (
                           <div className={`bg-gray-800 border rounded-lg p-4 ${isCurrentPlan ? 'border-yellow-500 ring-2 ring-yellow-500/20' : 'border-gray-700'}`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <Crown className="h-4 w-4 text-yellow-400" />
-                              <h4 className="font-semibold text-gray-200">Pro</h4>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Crown className="h-4 w-4 text-yellow-400" />
+                                <h4 className="font-semibold text-gray-200">Pro</h4>
+                                {isCurrentPlan && (
+                                  <span className="px-2 py-0.5 bg-yellow-600/20 text-yellow-400 rounded-full text-xs">
+                                    Current
+                                  </span>
+                                )}
+                              </div>
                               {isCurrentPlan && (
-                                <span className="px-2 py-0.5 bg-yellow-600/20 text-yellow-400 rounded-full text-xs">
-                                  Current
-                                </span>
+                                <div className="relative" data-plan-menu-root="true">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenPlanMenu(openPlanMenu === 'pro' ? null : 'pro')}
+                                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                                    aria-label="Plan actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={openPlanMenu === 'pro'}
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </button>
+                                  {openPlanMenu === 'pro' && (
+                                    <div
+                                      role="menu"
+                                      className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-10 overflow-hidden"
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setOpenPlanMenu(null)
+                                          handleCancel()
+                                        }}
+                                        disabled={isCancelling}
+                                        className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {isCancelling ? 'Deleting…' : 'Delete subscription'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className="mb-2">
@@ -433,15 +549,7 @@ export default function Profile() {
                               <span className="text-xs text-gray-400">/month</span>
                             </div>
                             <p className="text-sm text-gray-400 mb-3">5000 executions/month</p>
-                            {isCurrentPlan ? (
-                              <button
-                                onClick={handleCancel}
-                                disabled={isCancelling}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {isCancelling ? 'Cancelling...' : 'Cancel Plan'}
-                              </button>
-                            ) : isBigger ? (
+                            {isBigger ? (
                               <button
                                 onClick={() => handleUpgrade('pro')}
                                 disabled={isCreatingCheckout}
@@ -455,7 +563,7 @@ export default function Profile() {
                                 className="w-full px-4 py-2 bg-gray-700 text-gray-500 rounded-lg font-medium cursor-not-allowed"
                                 title="Cannot downgrade to a smaller plan"
                               >
-                                Current Plan Higher
+                                {isCurrentPlan ? 'Current plan' : 'Current Plan Higher'}
                               </button>
                             )}
                           </div>

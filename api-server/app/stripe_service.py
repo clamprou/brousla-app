@@ -231,14 +231,19 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
             plan = metadata.get("plan") or (user.get("subscription_plan") if user else None)
         
         status = subscription["status"]
-        
-        # Map Stripe status to our status
+        # Keep Stripe semantics: "past_due" is not the same as "canceled".
+        # We persist a small set of statuses that the execution gate understands.
         if status in ["active", "trialing"]:
             our_status = "active"
-        elif status in ["canceled", "unpaid", "past_due"]:
+        elif status == "past_due":
+            our_status = "past_due"
+        elif status in ["canceled", "cancelled"]:
             our_status = "cancelled"
+        elif status == "unpaid":
+            our_status = "unpaid"
         else:
-            our_status = "expired"
+            # Covers: incomplete, incomplete_expired, paused, etc.
+            our_status = status or "expired"
         
         # Calculate dates
         current_period_start = datetime.fromtimestamp(subscription["current_period_start"])

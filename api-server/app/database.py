@@ -738,14 +738,13 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
     # Paid subscription - check status and limits
     subscription_plan = subscription.get("subscription_plan")
     subscription_status = subscription.get("subscription_status")
+    cancel_at_period_end = subscription.get("cancel_at_period_end") or False
     
     # Check if subscription is active
     if subscription_plan in ("basic", "plus", "pro"):
-        if subscription_status != "active":
-            return False, "Subscription is not active. Please renew your subscription."
-        
-        # Check subscription end date
+        # Check subscription end date first (if present), so we can give a precise expiry message.
         end_date = subscription.get("current_period_end")
+        now = None
         if end_date:
             try:
                 from datetime import datetime
@@ -757,6 +756,16 @@ def check_user_can_execute(user_id: str) -> tuple[bool, str]:
                     return False, "Subscription has expired. Please renew your subscription."
             except (ValueError, AttributeError):
                 pass  # Invalid date, continue check
+
+        # Stripe statuses like "past_due" can still be within a paid/grace period.
+        allowed_statuses = {"active", "past_due"}
+        if subscription_status not in allowed_statuses:
+            # If the user explicitly cancelled at period end, keep access until period end.
+            if subscription_status == "cancelled" and cancel_at_period_end and end_date:
+                # end_date already checked above; if it's not expired, allow.
+                pass
+            else:
+                return False, "Subscription is not active. Please renew your subscription."
         
         # Check monthly limit - fetch from Stripe
         stripe_price_id = subscription.get("stripe_price_id")
@@ -811,9 +820,27 @@ def update_user_subscription(
             
             # Create subscription if it doesn't exist
             cursor.execute("""
-                INSERT INTO subscriptions (user_id, stripe_subscription_id, plan, status, stripe_price_id, cancel_at_period_end)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, stripe_subscription_id, plan, status, stripe_price_id, 1 if cancel_at_period_end else 0))
+                INSERT INTO subscriptions (
+                    user_id,
+                    stripe_subscription_id,
+                    stripe_price_id,
+                    plan,
+                    status,
+                    current_period_start,
+                    current_period_end,
+                    cancel_at_period_end
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id,
+                stripe_subscription_id,
+                stripe_price_id,
+                plan,
+                status,
+                current_period_start,
+                current_period_end,
+                1 if cancel_at_period_end else 0
+            ))
             conn.commit()
             return
         
