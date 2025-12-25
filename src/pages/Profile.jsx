@@ -243,12 +243,31 @@ export default function Profile() {
     if (!subscriptionStatus?.usage) return 'N/A'
     const usage = subscriptionStatus.usage
     if (usage.type === 'trial') {
-      return `${usage.used} / ${usage.limit} free executions`
+      return `${usage.used}/${usage.limit} executions`
     } else if (usage.type === 'monthly') {
-      return `${usage.used} / ${usage.limit} executions this month`
+      return `${usage.used}/${usage.limit} executions`
     } else {
-      return `${usage.used} executions this month`
+      return `${usage.used} executions`
     }
+  }
+
+  const getPlanIcon = (plan) => {
+    if (!plan || plan === 'trial') return null
+    switch (plan) {
+      case 'basic':
+        return <Zap className="h-4 w-4 text-blue-400" />
+      case 'plus':
+        return <Crown className="h-4 w-4 text-purple-400" />
+      case 'pro':
+        return <Crown className="h-4 w-4 text-yellow-400" />
+      default:
+        return null
+    }
+  }
+
+  const getPlanName = (plan) => {
+    if (!plan || plan === 'trial') return 'Free Trial'
+    return plan.charAt(0).toUpperCase() + plan.slice(1)
   }
 
   const handleLogout = () => {
@@ -360,19 +379,21 @@ export default function Profile() {
                   <div className="bg-gray-800 border border-gray-700 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-400">Current Plan</span>
-                      <span className="text-sm font-medium text-gray-200">
-                        {subscriptionStatus.subscription_plan 
-                          ? subscriptionStatus.subscription_plan.charAt(0).toUpperCase() + subscriptionStatus.subscription_plan.slice(1)
-                          : 'Free Trial'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">Usage</span>
-                      <span className="text-sm font-medium text-gray-200">{getUsageText()}</span>
+                      <div className="flex items-center gap-2">
+                        {getPlanIcon(subscriptionStatus.subscription_plan)}
+                        <span className="text-sm font-medium text-gray-200">
+                          {getPlanName(subscriptionStatus.subscription_plan)}
+                        </span>
+                        {subscriptionStatus.subscription_plan && (
+                          <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full text-xs font-medium">
+                            Active
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {subscriptionStatus.current_period_end && (
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm font-medium text-gray-300">Renewal Date</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-400">Renewal Date</span>
                         <span className="text-sm font-medium text-gray-200">
                           {new Date(subscriptionStatus.current_period_end).toLocaleDateString('en-US', {
                             year: 'numeric',
@@ -382,6 +403,10 @@ export default function Profile() {
                         </span>
                       </div>
                     )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-400">Usage</span>
+                      <span className="text-sm font-medium text-gray-200">{getUsageText()}</span>
+                    </div>
                   </div>
 
                   {/* All Plans */}

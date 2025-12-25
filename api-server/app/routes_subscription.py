@@ -85,6 +85,7 @@ async def create_checkout(
 ):
     """
     Create Stripe checkout session for subscription.
+    If user has an existing subscription, it will be completely cancelled first.
     
     Request body: { "plan": "basic" | "plus" | "pro" }
     

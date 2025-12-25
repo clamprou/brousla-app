@@ -126,6 +126,13 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
             logger.warning(f"checkout.session.completed missing required fields: user_id={user_id}, subscription_id={subscription_id}")
             return False
         
+        # #region agent log
+        import json
+        import time
+        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"stripe_service.py:123","message":"Session object inspection","data":{"session_keys":list(session.keys()) if hasattr(session, 'keys') else None,"subscription_id":subscription_id},"timestamp":int(time.time()*1000)})+"\n")
+        # #endregion
+        
         # Get subscription details
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
@@ -155,25 +162,99 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         current_period_end = None
         cancel_at_period_end = False
         
-        # Try to access current_period_start/end - Stripe Python SDK objects support attribute access
+        # #region agent log
+        import json
+        import time
+        sub_type = type(subscription).__name__
+        has_get = hasattr(subscription, 'get')
+        has_dict_keys = hasattr(subscription, 'keys')
+        sub_keys = list(subscription.keys()) if has_dict_keys else None
+        # Check for period-related keys
+        period_keys = [k for k in (sub_keys or []) if 'period' in k.lower() or 'start' in k.lower() or 'end' in k.lower()]
+        # Try to get all values to see what's actually in the response
+        all_values = {}
+        if has_dict_keys:
+            for key in sub_keys[:20]:  # Sample first 20 keys
+                try:
+                    val = subscription.get(key) if has_get else subscription[key]
+                    all_values[key] = str(val)[:50] if val is not None else None
+                except:
+                    all_values[key] = "<error>"
+        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"stripe_service.py:158","message":"Subscription object inspection","data":{"type":sub_type,"has_get":has_get,"has_keys":has_dict_keys,"all_keys":sub_keys,"period_related_keys":period_keys,"sample_values":all_values},"timestamp":int(time.time()*1000)})+"\n")
+        # #endregion
+        
+        # Try to access current_period_start/end - dates are in items.data[0] for flexible billing
         try:
-            current_period_start = datetime.fromtimestamp(subscription.current_period_start)
-            current_period_end = datetime.fromtimestamp(subscription.current_period_end)
-            cancel_at_period_end = subscription.cancel_at_period_end or False
-        except (AttributeError, KeyError) as e:
-            # Fallback: try to get from items period
-            try:
-                if subscription.items and len(subscription.items.data) > 0:
-                    item = subscription.items.data[0]
-                    if hasattr(item, 'period') and item.period:
-                        current_period_start = datetime.fromtimestamp(item.period.start)
-                        current_period_end = datetime.fromtimestamp(item.period.end)
-            except Exception as fallback_error:
-                logger.warning(f"Could not retrieve subscription dates for {subscription_id}: {e}, fallback also failed: {fallback_error}. Continuing without dates.")
+            # First try root level (for standard subscriptions)
+            if hasattr(subscription, 'current_period_start') and subscription.current_period_start:
+                current_period_start = datetime.fromtimestamp(subscription.current_period_start)
+                current_period_end = datetime.fromtimestamp(subscription.current_period_end)
+                cancel_at_period_end = getattr(subscription, 'cancel_at_period_end', False) or False
+            # Try dictionary access at root level
+            elif subscription.get("current_period_start") if hasattr(subscription, 'get') else None:
+                current_period_start = datetime.fromtimestamp(subscription["current_period_start"])
+                current_period_end = datetime.fromtimestamp(subscription["current_period_end"])
+                cancel_at_period_end = subscription.get("cancel_at_period_end", False) if hasattr(subscription, 'get') else False
+            # Fallback: get from items.data[0] (for flexible billing subscriptions)
+            else:
+                items = subscription.get("items") if hasattr(subscription, 'get') else getattr(subscription, 'items', None)
+                if items:
+                    items_data = items.get("data") if hasattr(items, 'get') else (items.data if hasattr(items, 'data') else None)
+                    if items_data and len(items_data) > 0:
+                        first_item = items_data[0]
+                        # Get period dates from subscription item
+                        item_period_start = first_item.get("current_period_start") if hasattr(first_item, 'get') else getattr(first_item, 'current_period_start', None)
+                        item_period_end = first_item.get("current_period_end") if hasattr(first_item, 'get') else getattr(first_item, 'current_period_end', None)
+                        
+                        if item_period_start and item_period_end:
+                            current_period_start = datetime.fromtimestamp(item_period_start)
+                            current_period_end = datetime.fromtimestamp(item_period_end)
+                            cancel_at_period_end = subscription.get("cancel_at_period_end", False) if hasattr(subscription, 'get') else getattr(subscription, 'cancel_at_period_end', False) or False
+                        else:
+                            raise ValueError("Period dates not found in subscription items")
+                    else:
+                        raise ValueError("No subscription items found")
+                else:
+                    raise ValueError("Subscription items not accessible")
+            
+            # #region agent log
+            # Determine source of dates for logging
+            if hasattr(subscription, 'current_period_start') and subscription.current_period_start:
+                source = "root_attr"
+            elif subscription.get("current_period_start") if hasattr(subscription, 'get') else None:
+                source = "root_dict"
+            else:
+                source = "items"
+            with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"stripe_service.py:221","message":"Date retrieval succeeded","data":{"current_period_start":current_period_start.isoformat() if current_period_start else None,"current_period_end":current_period_end.isoformat() if current_period_end else None,"source":source},"timestamp":int(time.time()*1000)})+"\n")
+            # #endregion
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            # #region agent log
+            with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"stripe_service.py:210","message":"All date retrieval methods failed","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(time.time()*1000)})+"\n")
+            # #endregion
+            logger.warning(f"Could not retrieve subscription dates for {subscription_id}: {e}. Continuing without dates.")
+        
+        # #region agent log
+        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"stripe_service.py:195","message":"Before database update","data":{"current_period_start":current_period_start.isoformat() if current_period_start else None,"current_period_end":current_period_end.isoformat() if current_period_end else None,"cancel_at_period_end":cancel_at_period_end},"timestamp":int(time.time()*1000)})+"\n")
+        # #endregion
         
         # Update user subscription with metadata from Stripe
         # Dates are optional - never block update if dates are unavailable
         try:
+            # Check if user has an old subscription that needs to be cancelled (upgrade scenario)
+            from app.database import get_user_subscription, get_db_connection
+            old_subscription = get_user_subscription(user_id)
+            old_stripe_subscription_id = None
+            if old_subscription and old_subscription.get("stripe_subscription_id"):
+                old_id = old_subscription["stripe_subscription_id"]
+                # Only cancel if it's a different subscription (upgrade scenario)
+                if old_id != subscription_id:
+                    old_stripe_subscription_id = old_id
+                    logger.info(f"User {user_id} has old subscription {old_stripe_subscription_id}, will cancel after new subscription is saved")
+            
             update_user_subscription(
                 user_id=user_id,
                 plan=plan_from_metadata,
@@ -185,6 +266,44 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
                 cancel_at_period_end=cancel_at_period_end
             )
             logger.info(f"Updated subscription for user {user_id}: {plan_from_metadata}, price_id: {price_id}")
+            
+            # Now that new subscription is successfully saved, cancel the old one if it exists
+            if old_stripe_subscription_id and old_stripe_subscription_id != subscription_id:
+                try:
+                    # Delete old subscription from Stripe
+                    try:
+                        stripe.Subscription.delete(old_stripe_subscription_id)
+                        logger.info(f"Deleted old subscription {old_stripe_subscription_id} from Stripe after successful upgrade")
+                    except stripe.error.StripeError as e:
+                        if "No such subscription" not in str(e) and "already been deleted" not in str(e):
+                            logger.warning(f"Could not delete old subscription {old_stripe_subscription_id} from Stripe: {e}")
+                            # Try to cancel at period end first, then delete
+                            try:
+                                stripe.Subscription.modify(
+                                    old_stripe_subscription_id,
+                                    cancel_at_period_end=True
+                                )
+                                stripe.Subscription.delete(old_stripe_subscription_id)
+                            except Exception as e2:
+                                logger.warning(f"Could not delete old subscription {old_stripe_subscription_id} after modify: {e2}")
+                    
+                    # The old subscription is already replaced in the database by update_user_subscription
+                    # which updates the existing row, so we don't need to delete it separately
+                    # Reset monthly workflows used (preserve trial workflows used)
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            UPDATE usage 
+                            SET monthly_workflows_used = 0,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = ?
+                        """, (user_id,))
+                        conn.commit()
+                    
+                    logger.info(f"Successfully cancelled old subscription {old_stripe_subscription_id} for user {user_id} after upgrade")
+                except Exception as e:
+                    # Don't fail the webhook if old subscription cancellation fails
+                    logger.error(f"Error cancelling old subscription {old_stripe_subscription_id} for user {user_id}: {e}")
         except Exception as e:
             logger.error(f"Error updating subscription for user {user_id}: {e}")
             return False
