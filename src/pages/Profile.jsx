@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { LogOut, User, Mail, Shield, CreditCard, Zap, Crown, MoreVertical } from 'lucide-react'
+import { LogOut, User, Mail, CreditCard, Zap, Crown, MoreVertical } from 'lucide-react'
 import { BASE_API_URL } from '../config/api.js'
 import { createCheckoutSession, cancelSubscription, cancelSubscriptionCompletely } from '../utils/apiClient.js'
 import StripeCheckoutModal from '../components/StripeCheckoutModal.jsx'
@@ -355,14 +355,17 @@ export default function Profile() {
                     <p className="text-sm text-gray-200">{userInfo.email}</p>
                   </div>
                 </div>
+              </div>
 
-                <div className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg">
-                  <Shield className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-xs text-gray-500 mb-1">User ID</p>
-                    <p className="text-sm text-gray-200 font-mono">{userInfo.id}</p>
-                  </div>
-                </div>
+              {/* Logout Button */}
+              <div className="mt-4 pt-4 border-t border-gray-800">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-700 hover:bg-red-600 text-gray-200 rounded-md transition-colors text-xs font-medium"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Log Out
+                </button>
               </div>
             </div>
 
@@ -704,20 +707,6 @@ export default function Profile() {
               )}
             </div>
 
-            {/* Logout Section */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-gray-200 mb-2">Account Actions</h3>
-              <p className="text-sm text-gray-400 mb-4">
-                Sign out of your account. You'll need to log in again to access the application.
-              </p>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-600 text-gray-200 rounded-lg transition-colors font-medium"
-              >
-                <LogOut className="h-5 w-5" />
-                Log Out
-              </button>
-            </div>
           </div>
         ) : null}
       </div>

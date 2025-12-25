@@ -1,23 +1,13 @@
 import React from 'react'
-import { Settings, HelpCircle, Minus, X, User } from 'lucide-react'
+import { Minus, X, User, Zap, Crown } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function TopBar() {
-  const { isAuthenticated } = useAuth()
-
-  const handleSettingsClick = () => {
-    // Dispatch custom event to navigate to settings
-    window.dispatchEvent(new CustomEvent('navigate', { detail: 'settings' }))
-  }
+  const { subscriptionStatus, isAuthenticated } = useAuth()
 
   const handleProfileClick = () => {
     // Dispatch custom event to navigate to profile
     window.dispatchEvent(new CustomEvent('navigate', { detail: 'profile' }))
-  }
-
-  const handleHelpClick = () => {
-    // You can implement help functionality here
-    console.log('Help clicked')
   }
 
   const handleMinimizeClick = () => {
@@ -31,6 +21,53 @@ export default function TopBar() {
       window.electronAPI.closeWindow()
     }
   }
+
+  // Get plan info for the profile button
+  const getPlanInfo = () => {
+    if (!isAuthenticated || !subscriptionStatus) {
+      return { plan: null, icon: User, color: 'gray', bgColor: 'bg-gray-700', textColor: 'text-gray-300' }
+    }
+
+    const plan = subscriptionStatus.subscription_plan
+    if (!plan || plan === 'trial') {
+      return { plan: null, icon: User, color: 'gray', bgColor: 'bg-gray-700', textColor: 'text-gray-300' }
+    }
+
+    switch (plan) {
+      case 'basic':
+        return { 
+          plan: 'Basic', 
+          icon: Zap, 
+          color: 'blue', 
+          bgColor: 'bg-blue-600', 
+          textColor: 'text-blue-100',
+          iconColor: 'text-blue-200'
+        }
+      case 'plus':
+        return { 
+          plan: 'Plus', 
+          icon: Crown, 
+          color: 'purple', 
+          bgColor: 'bg-purple-600', 
+          textColor: 'text-purple-100',
+          iconColor: 'text-purple-200'
+        }
+      case 'pro':
+        return { 
+          plan: 'Pro', 
+          icon: Crown, 
+          color: 'yellow', 
+          bgColor: 'bg-yellow-600', 
+          textColor: 'text-yellow-100',
+          iconColor: 'text-yellow-200'
+        }
+      default:
+        return { plan: null, icon: User, color: 'gray', bgColor: 'bg-gray-700', textColor: 'text-gray-300' }
+    }
+  }
+
+  const planInfo = getPlanInfo()
+  const PlanIcon = planInfo.icon
 
   return (
     <div 
@@ -47,37 +84,20 @@ export default function TopBar() {
 
       {/* Right side - Controls */}
       <div className="flex items-center space-x-2">
-        {/* Profile Button - Only show when authenticated */}
+        {/* Profile/Plan Button - Only show when authenticated */}
         {isAuthenticated && (
           <button
             onClick={handleProfileClick}
-            className="p-2 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-colors duration-200"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:opacity-90 transition-opacity ${planInfo.bgColor} ${planInfo.textColor}`}
             style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
-            title="Profile"
+            title={planInfo.plan ? `${planInfo.plan} Plan` : 'Profile'}
           >
-            <User size={16} />
+            <PlanIcon size={14} className={planInfo.iconColor || planInfo.textColor} />
+            {planInfo.plan && (
+              <span className="text-xs font-medium">{planInfo.plan}</span>
+            )}
           </button>
         )}
-
-        {/* Settings Button */}
-        <button
-          onClick={handleSettingsClick}
-          className="p-2 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-colors duration-200"
-          style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
-          title="Settings"
-        >
-          <Settings size={16} />
-        </button>
-
-        {/* Help Button */}
-        <button
-          onClick={handleHelpClick}
-          className="p-2 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-colors duration-200"
-          style={{ WebkitAppRegion: 'no-drag', appRegion: 'no-drag' }}
-          title="Help"
-        >
-          <HelpCircle size={16} />
-        </button>
 
         {/* Separator */}
         <div className="w-px h-6 bg-gray-600 mx-2" />

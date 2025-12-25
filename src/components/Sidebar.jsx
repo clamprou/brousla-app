@@ -51,37 +51,35 @@ export default function Sidebar({ items, activeKey, collapsed, onToggleCollapse,
           </div>
         </div>
 
-        {/* Settings group */}
-        <div className="pt-2 border-t border-gray-800">
-          <div className="space-y-1">
-            {items.filter(i => i.group === 'settings').map(item => (
-              <SidebarItem
-                key={item.key}
-                icon={item.icon}
-                label={item.label}
-                active={activeKey === item.key}
-                collapsed={collapsed}
-                onClick={() => onSelect(item.key)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Profile */}
-        <div className="pt-2 border-t border-gray-800">
-          <div className="space-y-1">
-            <SidebarItem
-              icon={User}
-              label="Profile"
-              active={activeKey === 'profile'}
-              collapsed={collapsed}
-              onClick={() => onSelect('profile')}
-            />
-          </div>
-        </div>
       </div>
 
-      <div className="text-[10px] text-gray-500 text-center">v{window.electron?.appVersion || ''}</div>
+      {/* Profile and Settings at bottom */}
+      <div className="pt-2 border-t border-gray-800 space-y-1">
+        {/* Profile */}
+        <div>
+          <SidebarItem
+            icon={User}
+            label="Profile"
+            active={activeKey === 'profile'}
+            collapsed={collapsed}
+            onClick={() => onSelect('profile')}
+          />
+        </div>
+
+        {/* Settings group */}
+        <div>
+          {items.filter(i => i.group === 'settings').map(item => (
+            <SidebarItem
+              key={item.key}
+              icon={item.icon}
+              label={item.label}
+              active={activeKey === item.key}
+              collapsed={collapsed}
+              onClick={() => onSelect(item.key)}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
