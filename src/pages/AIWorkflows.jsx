@@ -6,8 +6,9 @@ import OutputFolderModal from '../components/OutputFolderModal.jsx'
 import SubscriptionModal from '../components/SubscriptionModal.jsx'
 import { settingsManager } from '../utils/settingsManager.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
-const BACKEND_URL = 'http://127.0.0.1:8000'
+const BACKEND_URL = WORKFLOW_BASE_URL
 
 export default function AIWorkflows() {
   const { userId, token, subscriptionStatus, fetchSubscriptionStatus } = useAuth()

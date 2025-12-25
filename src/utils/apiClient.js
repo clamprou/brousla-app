@@ -1,5 +1,10 @@
 import { BASE_API_URL } from '../config/api.js'
 
+const DEBUG_API = import.meta.env.DEV || import.meta.env.VITE_DEBUG_API === 'true'
+const debugLog = (...args) => {
+  if (DEBUG_API) console.log(...args)
+}
+
 /**
  * API Client for backend communication
  * All AI-related calls go through the backend server
@@ -21,12 +26,14 @@ export async function login(credentials) {
       : null),
   }
 
-  console.log('Login Request:', {
-    url: requestUrl,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: safeCredentialsForLog
-  })
+  if (DEBUG_API) {
+    debugLog('Login Request:', {
+      url: requestUrl,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeCredentialsForLog
+    })
+  }
 
   const response = await fetch(requestUrl, {
     method: 'POST',
@@ -45,12 +52,14 @@ export async function login(credentials) {
     errorData = { detail: responseText, raw: responseText }
   }
 
-  console.log('Login Response:', {
-    status: response.status,
-    statusText: response.statusText,
-    headers: Object.fromEntries(response.headers.entries()),
-    body: errorData
-  })
+  if (DEBUG_API) {
+    debugLog('Login Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: errorData
+    })
+  }
 
   if (!response.ok) {
     const errorMessage = errorData.detail || errorData.message || `Login failed: ${response.status}`
@@ -81,12 +90,14 @@ export async function register(data) {
     ...(data && typeof data === 'object' && 'password' in data ? { password: '[REDACTED]' } : null),
   }
 
-  console.log('Register Request:', {
-    url: requestUrl,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: safeRegistrationForLog
-  })
+  if (DEBUG_API) {
+    debugLog('Register Request:', {
+      url: requestUrl,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeRegistrationForLog
+    })
+  }
 
   const response = await fetch(requestUrl, {
     method: 'POST',
@@ -105,12 +116,14 @@ export async function register(data) {
     errorData = { detail: responseText, raw: responseText }
   }
 
-  console.log('Register Response:', {
-    status: response.status,
-    statusText: response.statusText,
-    headers: Object.fromEntries(response.headers.entries()),
-    body: errorData
-  })
+  if (DEBUG_API) {
+    debugLog('Register Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: errorData
+    })
+  }
 
   if (!response.ok) {
     const errorMessage = errorData.detail || errorData.message || `Registration failed: ${response.status}`
@@ -286,14 +299,14 @@ export async function checkGoogleOAuthStatus(state) {
  * @returns {Promise<{token: string}>}
  */
 export async function handleGoogleOAuthCallback(callbackUrl) {
-  console.log('handleGoogleOAuthCallback called with URL:', callbackUrl)
+  if (DEBUG_API) debugLog('handleGoogleOAuthCallback called with URL:', callbackUrl)
   try {
     const url = new URL(callbackUrl)
     const status = url.searchParams.get('status')
     const token = url.searchParams.get('token')
     const message = url.searchParams.get('message')
     
-    console.log('Parsed URL params - status:', status, 'token:', token ? 'present' : 'missing', 'message:', message)
+    if (DEBUG_API) debugLog('Parsed URL params - status:', status, 'token:', token ? 'present' : 'missing', 'message:', message)
     
     if (status === 'error') {
       const error = new Error(message || 'Google OAuth error')
@@ -301,14 +314,14 @@ export async function handleGoogleOAuthCallback(callbackUrl) {
     }
     
     if (status === 'success' && token) {
-      console.log('Successfully extracted token from callback URL')
+      if (DEBUG_API) debugLog('Successfully extracted token from callback URL')
       return { token }
     }
     
     throw new Error('Invalid OAuth callback: missing token or status')
   } catch (error) {
     if (error instanceof TypeError) {
-      console.log('TypeError parsing URL, trying manual parsing (might be custom protocol)')
+      if (DEBUG_API) debugLog('TypeError parsing URL, trying manual parsing (might be custom protocol)')
       // URL parsing error - might be custom protocol
       // Try to parse manually
       const match = callbackUrl.match(/[?&]status=([^&]+)/)
@@ -320,14 +333,14 @@ export async function handleGoogleOAuthCallback(callbackUrl) {
       const messageMatch = callbackUrl.match(/[?&]message=([^&]+)/)
       const message = messageMatch ? decodeURIComponent(messageMatch[1]) : null
       
-      console.log('Manually parsed - status:', status, 'token:', token ? 'present' : 'missing', 'message:', message)
+      if (DEBUG_API) debugLog('Manually parsed - status:', status, 'token:', token ? 'present' : 'missing', 'message:', message)
       
       if (status === 'error') {
         throw new Error(message || 'Google OAuth error')
       }
       
       if (status === 'success' && token) {
-        console.log('Successfully extracted token from manual parsing')
+        if (DEBUG_API) debugLog('Successfully extracted token from manual parsing')
         return { token }
       }
       

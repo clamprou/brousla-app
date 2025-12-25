@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { AlertCircle, CheckCircle, Loader2, Server, Settings } from 'lucide-react'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
 export default function ComfyUIConnectionModal({ isOpen, onConnectionSuccess, onOpenSettings }) {
   const [isTesting, setIsTesting] = useState(false)
@@ -14,7 +15,7 @@ export default function ComfyUIConnectionModal({ isOpen, onConnectionSuccess, on
     setErrorMessage(null)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/comfyui/test-connection')
+      const response = await fetch(`${WORKFLOW_BASE_URL}/comfyui/test-connection`)
       const data = await response.json()
 
       if (data.success) {

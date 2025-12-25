@@ -32,9 +32,14 @@ class Settings(BaseSettings):
     rate_limit_requests_per_minute: int = 60
     
     # Server Configuration
-    host: str = "0.0.0.0"
+    # Desktop app should not bind publicly by default.
+    host: str = "127.0.0.1"
     port: int = 8001
     backend_base_url: str = "http://localhost:8001"  # Backend URL for email confirmation links (configurable for production)
+
+    # CORS (Electron dev server: http://localhost:5173, packaged app: Origin: null)
+    cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173,null"
+    cors_allow_credentials: bool = False
     
     # Email Configuration (Resend)
     resend_api_key: str

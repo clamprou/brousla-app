@@ -4,24 +4,31 @@ const { existsSync, statSync } = require('fs')
 const { spawn } = require('child_process')
 
 let mainWindow = null
-let pythonProcess = null
+let workflowServerProcess = null
+let apiServerProcess = null
 
 function getIsDev() {
   // Check if VITE_DEV_SERVER_PORT is set OR if we're not in production
   return process.env.VITE_DEV_SERVER_PORT !== undefined || !app.isPackaged
 }
 
+function getAppBasePath() {
+  // In packaged apps, extraResources live under process.resourcesPath
+  return app.isPackaged ? process.resourcesPath : process.cwd()
+}
+
 function createWindow() {
-  const appBasePath = app.isPackaged ? process.resourcesPath : process.cwd()
+  const appPath = app.getAppPath()
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     frame: false, // Remove default frame for custom title bar
     titleBarStyle: 'hidden',
     webPreferences: {
-      preload: path.join(appBasePath, 'electron', 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   })
 
@@ -62,7 +69,7 @@ function createWindow() {
       }
     })
   } else {
-    const distIndexPath = path.join(appBasePath, 'dist', 'index.html')
+    const distIndexPath = path.join(appPath, 'dist', 'index.html')
     if (!existsSync(distIndexPath)) {
       dialog.showErrorBox(
         'Renderer build missing',
@@ -75,16 +82,43 @@ function createWindow() {
   }
 }
 
-function startPython() {
-  const serverPath = path.join(process.cwd(), 'workflow-server', 'main.py')
+function startWorkflowServer() {
+  const appBasePath = getAppBasePath()
+  const serverPath = path.join(appBasePath, 'workflow-server', 'main.py')
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
-  pythonProcess = spawn(pythonCmd, [serverPath], { stdio: 'inherit' })
+  workflowServerProcess = spawn(pythonCmd, [serverPath], {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+    },
+  })
+}
+
+function startApiServer() {
+  const appBasePath = getAppBasePath()
+  const serverPath = path.join(appBasePath, 'api-server', 'run.py')
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3'
+  apiServerProcess = spawn(pythonCmd, [serverPath], {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+      // Ensure production-like behavior when packaged.
+      UVICORN_RELOAD: '0',
+      LOG_LEVEL: process.env.LOG_LEVEL || 'INFO',
+    },
+  })
 }
 
 function stopPython() {
-  if (pythonProcess) {
-    pythonProcess.kill()
-    pythonProcess = null
+  if (workflowServerProcess) {
+    workflowServerProcess.kill()
+    workflowServerProcess = null
+  }
+  if (apiServerProcess) {
+    apiServerProcess.kill()
+    apiServerProcess = null
   }
 }
 
@@ -199,9 +233,10 @@ function handleProtocolUrl(url) {
 }
 
 app.whenReady().then(() => {
-  // Only start Python server in production (in dev, it's started by dev:backend)
+  // Only start Python servers in production (in dev, they're started by npm scripts)
   if (!getIsDev()) {
-    startPython()
+    startWorkflowServer()
+    startApiServer()
   }
   createWindow()
   
@@ -269,8 +304,17 @@ ipcMain.handle('dialog:selectFolder', async () => {
 // Shell handlers
 ipcMain.handle('shell:openExternal', async (event, url) => {
   try {
-    await shell.openExternal(url)
-    return { success: true }
+    const parsed = new URL(String(url))
+    const protocol = parsed.protocol.toLowerCase()
+    if (protocol === 'https:') {
+      await shell.openExternal(parsed.toString())
+      return { success: true }
+    }
+    if (protocol === 'http:' && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost')) {
+      await shell.openExternal(parsed.toString())
+      return { success: true }
+    }
+    throw new Error(`Blocked external URL: ${parsed.toString()}`)
   } catch (error) {
     console.error('Error opening external URL:', error)
     return { success: false, error: error.message }
@@ -280,6 +324,15 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
 // Create Stripe checkout window
 ipcMain.handle('stripe:openCheckout', async (event, url) => {
   try {
+    const parsed = new URL(String(url))
+    const hostname = parsed.hostname.toLowerCase()
+    const isStripe =
+      parsed.protocol.toLowerCase() === 'https:' &&
+      (hostname === 'checkout.stripe.com' || hostname.endsWith('.stripe.com'))
+    if (!isStripe) {
+      throw new Error(`Blocked non-Stripe checkout URL: ${parsed.toString()}`)
+    }
+
     const checkoutWindow = new BrowserWindow({
       width: 800,
       height: 900,
@@ -287,13 +340,14 @@ ipcMain.handle('stripe:openCheckout', async (event, url) => {
       modal: false,
       webPreferences: {
         nodeIntegration: false,
-        contextIsolation: true
+        contextIsolation: true,
+        sandbox: true
       },
       title: 'Complete Your Subscription'
     })
 
     // Load the Stripe checkout URL
-    await checkoutWindow.loadURL(url)
+    await checkoutWindow.loadURL(parsed.toString())
 
     // Handle window close
     checkoutWindow.on('closed', () => {

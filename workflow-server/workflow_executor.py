@@ -491,51 +491,12 @@ def _execute_single_text_to_video_clip(
         }
     
     except Exception as e:
-        # #region agent log
-        log_data = {
-            "location": "workflow_executor.py:487",
-            "message": "Exception caught in _execute_single_text_to_video_clip",
-            "data": {
-                "workflowId": workflow_id,
-                "error": str(e),
-                "errorType": type(e).__name__,
-                "isCancellationError": "cancelled" in str(e).lower()
-            },
-            "timestamp": int(time.time() * 1000),
-            "sessionId": "debug-session",
-            "runId": "pre-fix",
-            "hypothesisId": "B"
-        }
-        try:
-            requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
-        except:
-            pass
-        # #endregion
-        
         if update_state_callback:
             # Check if this is a cancellation exception
             is_cancellation = "cancelled" in str(e).lower()
             updates = {"isRunning": False}
             if is_cancellation:
                 updates["cancelled"] = False  # Clear cancelled flag on cancellation exception
-                # #region agent log
-                log_data = {
-                    "location": "workflow_executor.py:510",
-                    "message": "Clearing cancelled flag in exception handler",
-                    "data": {
-                        "workflowId": workflow_id,
-                        "error": str(e)
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": "pre-fix",
-                    "hypothesisId": "B"
-                }
-                try:
-                    requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
-                except:
-                    pass
-                # #endregion
             update_state_callback(workflow_id, updates)
         raise e
 
@@ -1444,24 +1405,6 @@ def _poll_for_completion(
         if workflow_id and get_state_callback:
             if _check_cancellation(workflow_id, get_state_callback):
                 print(f"Workflow {workflow_id} was cancelled during polling")
-                # #region agent log
-                log_data = {
-                    "location": "workflow_executor.py:1390",
-                    "message": "Raising cancellation exception in _poll_for_completion",
-                    "data": {
-                        "workflowId": workflow_id,
-                        "promptId": prompt_id
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": "pre-fix",
-                    "hypothesisId": "B"
-                }
-                try:
-                    requests.post('http://127.0.0.1:7242/ingest/ff3b0a8c-2736-424c-aad3-4618129e7191', json=log_data, timeout=0.1)
-                except:
-                    pass
-                # #endregion
                 raise Exception("Workflow execution was cancelled")
         
         try:
