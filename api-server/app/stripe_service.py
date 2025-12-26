@@ -4,7 +4,13 @@ import logging
 from typing import Optional, Tuple
 import stripe
 from app.config import settings
-from app.database import update_user_subscription, get_user_by_id, get_user_by_stripe_subscription_id
+from app.database import (
+    update_user_subscription, 
+    get_user_by_id, 
+    get_user_by_stripe_subscription_id,
+    is_stripe_event_processed,
+    mark_stripe_event_processed
+)
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -107,11 +113,23 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         logger.error(f"Invalid signature: {e}")
         return False
     
+    # Check idempotency - skip if event already processed
+    event_id = event.get("id")
+    if event_id:
+        if is_stripe_event_processed(event_id):
+            logger.info(f"Event {event_id} already processed, skipping (idempotency)")
+            return True  # Return True to acknowledge receipt to Stripe
+    
+    # Mark event as processed before processing (prevents race conditions)
+    # If processing fails, the event will still be marked, preventing infinite retries
+    if event_id:
+        mark_stripe_event_processed(event_id)
+    
     # Handle the event
     event_type = event["type"]
     data = event["data"]["object"]
     
-    logger.info(f"Received Stripe webhook: {event_type}")
+    logger.info(f"Received Stripe webhook: {event_type} (event_id: {event_id})")
     
     if event_type == "checkout.session.completed":
         # Subscription was created

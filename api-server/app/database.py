@@ -110,6 +110,19 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(email_verification_token)
         """)
         
+        # Create stripe_events table for webhook idempotency
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stripe_events (
+                event_id TEXT PRIMARY KEY,
+                processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create index on processed_at for cleanup queries
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stripe_events_processed_at ON stripe_events(processed_at)
+        """)
+        
         conn.commit()
 
 
@@ -919,6 +932,39 @@ def get_user_by_stripe_subscription_id(stripe_subscription_id: str) -> Optional[
                 "cancel_at_period_end": bool(row["cancel_at_period_end"]) if row["cancel_at_period_end"] is not None else False
             }
         return None
+
+
+def is_stripe_event_processed(event_id: str) -> bool:
+    """Check if a Stripe webhook event has already been processed.
+    
+    Args:
+        event_id: Stripe event ID (e.g., "evt_1234567890")
+    
+    Returns:
+        True if event has been processed, False otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT event_id FROM stripe_events WHERE event_id = ?
+        """, (event_id,))
+        row = cursor.fetchone()
+        return row is not None
+
+
+def mark_stripe_event_processed(event_id: str) -> None:
+    """Mark a Stripe webhook event as processed.
+    
+    Args:
+        event_id: Stripe event ID (e.g., "evt_1234567890")
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR IGNORE INTO stripe_events (event_id, processed_at)
+            VALUES (?, CURRENT_TIMESTAMP)
+        """, (event_id,))
+        conn.commit()
 
 
 def reset_monthly_executions(user_id: str) -> None:
