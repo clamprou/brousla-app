@@ -422,6 +422,53 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
             logger.error(f"Error retrieving subscription {subscription_id} in invoice.paid handler: {e}")
             return False
     
+    elif event_type == "invoice.payment_failed":
+        # Payment attempt failed - update subscription to past_due
+        invoice = data
+        subscription_id = invoice.get("subscription")
+        
+        if not subscription_id:
+            logger.warning("invoice.payment_failed event missing subscription_id")
+            return False
+        
+        # Try to find user by subscription ID
+        user = get_user_by_stripe_subscription_id(subscription_id)
+        
+        if not user:
+            logger.warning(f"Could not find user for subscription {subscription_id} in invoice.payment_failed event")
+            return False
+        
+        user_id = user["id"]
+        
+        # Retrieve current subscription status from Stripe to ensure accuracy
+        try:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            current_status = subscription.status
+            
+            # Only update to past_due if subscription is still active or past_due
+            # If subscription is already canceled, don't change it
+            if current_status in ["active", "past_due", "trialing"]:
+                # Update subscription status to past_due
+                update_user_subscription(
+                    user_id=user_id,
+                    status="past_due"
+                )
+                logger.warning(f"Payment failed for user {user_id}, subscription {subscription_id} - updated to past_due")
+                return True
+            else:
+                # Subscription already in a terminal state (canceled, unpaid, etc.)
+                logger.info(f"Payment failed for subscription {subscription_id}, but subscription status is already {current_status} - not updating")
+                return True
+        except stripe.error.StripeError as e:
+            logger.error(f"Error retrieving subscription {subscription_id} in invoice.payment_failed handler: {e}")
+            # Still update to past_due as a fallback if we can't retrieve from Stripe
+            update_user_subscription(
+                user_id=user_id,
+                status="past_due"
+            )
+            logger.warning(f"Payment failed for user {user_id}, subscription {subscription_id} - updated to past_due (fallback)")
+            return True
+    
     # Event not handled
     return False
 
