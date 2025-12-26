@@ -598,8 +598,31 @@ def get_user_subscription(user_id: str) -> Optional[dict]:
         return None
 
 
-def increment_user_execution_count(user_id: str) -> None:
-    """Increment execution count for user (trial or monthly)."""
+def _first_day_next_month(dt) -> str:
+    """Return UTC timestamp string for next month's 1st day at 00:00:00."""
+    from datetime import datetime
+    if dt.month == 12:
+        next_reset = dt.replace(year=dt.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        next_reset = dt.replace(month=dt.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    return next_reset.isoformat()
+
+
+def try_execute_and_increment(user_id: str) -> tuple[bool, str]:
+    """
+    Atomically check if user can execute and increment count if allowed.
+    
+    This function combines the check and increment into a single atomic operation
+    to prevent race conditions where multiple concurrent requests could bypass limits.
+    
+    Args:
+        user_id: User ID to check and increment
+    
+    Returns:
+        (success: bool, message: str)
+        - (True, "OK") if increment succeeded
+        - (False, error_message) if limit reached or other error
+    """
     from datetime import datetime
     
     with get_db_connection() as conn:
@@ -608,88 +631,161 @@ def increment_user_execution_count(user_id: str) -> None:
         # Get subscription to determine if trial or paid
         subscription = get_user_subscription(user_id)
         
-        # Get usage record
+        # Verify user exists
+        user = get_user_by_id(user_id)
+        if not user:
+            return False, "User not found"
+        
+        # Verify usage record exists
         usage = get_user_usage(user_id)
         if not usage:
-            return
-        
-        def _first_day_next_month(dt: datetime) -> datetime:
-            """Return UTC timestamp for next month's 1st day at 00:00:00."""
-            if dt.month == 12:
-                return dt.replace(year=dt.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            return dt.replace(month=dt.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return False, "Usage record not found"
         
         # If no subscription, user is on trial
         if not subscription:
-            # Increment trial executions
-            current_trial_used = usage.get("trial_workflows_used", 0)
-            new_trial_used = current_trial_used + 1
-            
+            # Atomic increment with limit check for trial users
             cursor.execute("""
                 UPDATE usage 
                 SET trial_workflows_used = trial_workflows_used + 1,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
+                WHERE user_id = ? 
+                  AND trial_workflows_used < 5
             """, (user_id,))
             
-            # If trial limit is reached (5 executions), deactivate all workflows
-            if new_trial_used >= 5:
+            if cursor.rowcount == 0:
+                # Check if limit reached or user doesn't exist
+                cursor.execute("SELECT trial_workflows_used FROM usage WHERE user_id = ?", (user_id,))
+                row = cursor.fetchone()
+                if row and row[0] is not None and row[0] >= 5:
+                    return False, "Free trial limit reached. Please upgrade to continue using AI workflows."
+                return False, "Usage record not found"
+            
+            # Check if we just hit the limit (for workflow deactivation)
+            cursor.execute("SELECT trial_workflows_used FROM usage WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row and row[0] is not None and row[0] >= 5:
                 _deactivate_all_user_workflows(user_id)
-        else:
-            # Paid subscription - increment monthly counter
-            subscription_plan = subscription.get("subscription_plan")
-            if subscription_plan in ("basic", "plus", "pro"):
-                # last_reset_date stores the *next* time we reset the monthly counter (UTC).
-                reset_date = usage.get("last_reset_date")
-                now = datetime.utcnow()
-                
-                if not reset_date:
-                    # First execution: set next reset date to start of next month.
-                    next_reset = _first_day_next_month(now)
-                    cursor.execute("""
-                        UPDATE usage 
-                        SET monthly_workflows_used = 1,
-                            last_reset_date = ?,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = ?
-                    """, (next_reset.isoformat(), user_id))
-                else:
-                    # Parse next reset date and check if we need to reset
+            
+            conn.commit()
+            return True, "OK"
+        
+        # Paid subscription - check subscription status first
+        subscription_plan = subscription.get("subscription_plan")
+        subscription_status = subscription.get("subscription_status")
+        cancel_at_period_end = subscription.get("cancel_at_period_end") or False
+        
+        if subscription_plan not in ("basic", "plus", "pro"):
+            return False, "Invalid subscription plan"
+        
+        # Check if subscription is active
+        allowed_statuses = {"active", "past_due"}
+        if subscription_status not in allowed_statuses:
+            # If the user explicitly cancelled at period end, keep access until period end
+            if subscription_status == "cancelled" and cancel_at_period_end:
+                end_date = subscription.get("current_period_end")
+                if end_date:
                     try:
-                        reset_dt = datetime.fromisoformat(reset_date.replace('Z', '+00:00'))
-                        if reset_dt.tzinfo:
-                            reset_dt = reset_dt.replace(tzinfo=None)
-                        
-                        # If we've passed the next reset timestamp, reset counter and set a new future reset.
-                        if reset_dt <= now:
-                            next_reset = _first_day_next_month(now)
-                            cursor.execute("""
-                                UPDATE usage 
-                                SET monthly_workflows_used = 1,
-                                    last_reset_date = ?,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE user_id = ?
-                            """, (next_reset.isoformat(), user_id))
-                        else:
-                            # Just increment counter
-                            cursor.execute("""
-                                UPDATE usage 
-                                SET monthly_workflows_used = monthly_workflows_used + 1,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE user_id = ?
-                            """, (user_id,))
+                        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                        if end_dt.tzinfo:
+                            end_dt = end_dt.replace(tzinfo=None)
+                        now = datetime.utcnow()
+                        if end_dt < now:
+                            return False, "Subscription has expired. Please renew your subscription."
                     except (ValueError, AttributeError):
-                        # Invalid date format, reset counter and set next reset date to start of next month.
-                        next_reset = _first_day_next_month(now)
-                        cursor.execute("""
-                            UPDATE usage 
-                            SET monthly_workflows_used = 1,
-                                last_reset_date = ?,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = ?
-                        """, (next_reset.isoformat(), user_id))
+                        pass
+            else:
+                return False, "Subscription is not active. Please renew your subscription."
+        
+        # Check subscription end date
+        end_date = subscription.get("current_period_end")
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                if end_dt.tzinfo:
+                    end_dt = end_dt.replace(tzinfo=None)
+                now = datetime.utcnow()
+                if end_dt < now:
+                    return False, "Subscription has expired. Please renew your subscription."
+            except (ValueError, AttributeError):
+                pass
+        
+        # Get monthly limit
+        stripe_price_id = subscription.get("stripe_price_id")
+        monthly_limit = get_monthly_workflow_limit_from_stripe(stripe_price_id)
+        
+        if monthly_limit is None:
+            # Fallback to default limits if metadata not set
+            logger.warning(f"User {user_id} has subscription plan {subscription_plan} but could not fetch monthly_workflow_limit from Stripe")
+            if subscription_plan == "basic":
+                monthly_limit = 500
+            elif subscription_plan == "plus":
+                monthly_limit = 2000
+            elif subscription_plan == "pro":
+                monthly_limit = 5000
+            else:
+                monthly_limit = 0
+        
+        # Atomic increment with limit check and reset logic
+        now = datetime.utcnow()
+        now_iso = now.isoformat()
+        next_month_start = _first_day_next_month(now)
+        
+        # Use CASE statement to atomically handle reset-or-increment and limit check
+        # SQLite datetime() function works with ISO format strings
+        cursor.execute("""
+            UPDATE usage 
+            SET monthly_workflows_used = CASE 
+                    WHEN last_reset_date IS NULL 
+                         OR datetime(last_reset_date) <= datetime(?)
+                    THEN 1
+                    ELSE monthly_workflows_used + 1
+                END,
+                last_reset_date = CASE 
+                    WHEN last_reset_date IS NULL 
+                         OR datetime(last_reset_date) <= datetime(?)
+                    THEN ?
+                    ELSE last_reset_date
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? 
+              AND (
+                -- Reset case: allow if reset needed (always allow reset)
+                (last_reset_date IS NULL OR datetime(last_reset_date) <= datetime(?))
+                OR
+                -- Increment case: allow if under limit
+                (datetime(last_reset_date) > datetime(?) AND monthly_workflows_used < ?)
+              )
+        """, (now_iso, now_iso, next_month_start, user_id, now_iso, now_iso, monthly_limit))
+        
+        if cursor.rowcount == 0:
+            # Check why it failed
+            cursor.execute("""
+                SELECT monthly_workflows_used, last_reset_date 
+                FROM usage 
+                WHERE user_id = ?
+            """, (user_id,))
+            row = cursor.fetchone()
+            if row:
+                used = row[0] if row[0] is not None else 0
+                if used >= monthly_limit:
+                    return False, f"Monthly execution limit reached ({used}/{monthly_limit}). Please upgrade your plan for more executions."
+            return False, "Usage record not found"
         
         conn.commit()
+        return True, "OK"
+
+
+def increment_user_execution_count(user_id: str) -> None:
+    """
+    DEPRECATED: Use try_execute_and_increment() instead.
+    
+    This function is kept for backward compatibility but should not be used
+    in new code. It does not perform atomic check-and-increment.
+    """
+    success, message = try_execute_and_increment(user_id)
+    if not success:
+        logger.warning(f"increment_user_execution_count failed for user {user_id}: {message}")
+        raise ValueError(f"Cannot increment execution count: {message}")
 
 
 def _deactivate_all_user_workflows(user_id: str) -> None:

@@ -12,7 +12,7 @@ from app.rate_limit import get_rate_limiter
 from app.subscription import check_subscription_required
 from app.llm.factory import get_llm_client
 from app.config import settings
-from app.database import increment_user_execution_count
+from app.database import try_execute_and_increment
 import json
 import re
 import logging
@@ -135,17 +135,15 @@ async def generate_prompts(
                 detail="Invalid token payload"
             )
         
-        # Check subscription
-        can_execute, message = can_user_execute_workflow(user_id)
-        if not can_execute:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=message
-            )
-    
-    # Increment execution count when making OpenAI request
-    # This ensures the counter increments even if workflow execution is cancelled
-    increment_user_execution_count(user_id)
+    # Atomically check limit and increment execution count when making OpenAI request
+    # This ensures the counter increments atomically and prevents race conditions
+    # If limit is reached, this will raise an error before the request is processed
+    success, message = try_execute_and_increment(user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=message
+        )
     
     if request.number_of_clips < 1:
         raise HTTPException(

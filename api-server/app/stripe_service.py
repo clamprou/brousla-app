@@ -27,7 +27,10 @@ STRIPE_PRO_PRICE_ID = settings.stripe_pro_price_id or os.getenv("STRIPE_PRO_PRIC
 
 def create_checkout_session(user_id: str, user_email: str, plan: str) -> Tuple[str, str]:
     """
-    Create a Stripe checkout session for subscription.
+    Create a Stripe checkout session for subscription, or modify existing subscription.
+    
+    If user has an existing subscription, modifies it with proration instead of creating new.
+    If user has no subscription, creates a new checkout session.
     
     Args:
         user_id: User ID
@@ -36,6 +39,8 @@ def create_checkout_session(user_id: str, user_email: str, plan: str) -> Tuple[s
     
     Returns:
         (checkout_url, session_id)
+        For new subscriptions: (checkout_url, session_id)
+        For existing subscriptions: ("modified", subscription_id) - frontend should handle this
     """
     if not stripe.api_key:
         raise ValueError("STRIPE_SECRET_KEY not configured")
@@ -52,6 +57,64 @@ def create_checkout_session(user_id: str, user_email: str, plan: str) -> Tuple[s
     if not price_id:
         raise ValueError(f"Stripe price ID not configured for plan: {plan}")
     
+    # Check if user has existing subscription
+    from app.database import get_user_subscription
+    existing_subscription = get_user_subscription(user_id)
+    
+    if existing_subscription and existing_subscription.get("stripe_subscription_id"):
+        # User has existing subscription - modify it instead of creating new
+        stripe_subscription_id = existing_subscription["stripe_subscription_id"]
+        current_price_id = existing_subscription.get("stripe_price_id")
+        
+        # Check if they're trying to change to the same plan
+        if current_price_id == price_id:
+            raise ValueError(f"User is already on the {plan} plan")
+        
+        try:
+            # Retrieve current subscription to get subscription item ID
+            subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+            
+            # Get the subscription item ID (needed for modification)
+            if not subscription.get("items") or len(subscription["items"]["data"]) == 0:
+                raise ValueError("Subscription has no items")
+            
+            subscription_item_id = subscription["items"]["data"][0].id
+            
+            # Modify subscription with proration
+            modified_subscription = stripe.Subscription.modify(
+                stripe_subscription_id,
+                items=[{
+                    "id": subscription_item_id,
+                    "price": price_id,
+                }],
+                proration_behavior="create_prorations",  # Create prorations for plan change
+                billing_cycle_anchor="unchanged",  # Keep billing cycle unchanged
+                metadata={
+                    "user_id": user_id,
+                    "plan": plan,
+                    "price_id": price_id
+                }
+            )
+            
+            # Update database immediately (webhook will also update, but this ensures consistency)
+            update_user_subscription(
+                user_id=user_id,
+                plan=plan,
+                stripe_price_id=price_id,
+                status="active"  # Keep active during plan change
+            )
+            
+            logger.info(f"Modified subscription {stripe_subscription_id} for user {user_id} to plan {plan} with proration")
+            
+            # Return special value to indicate modification (not checkout)
+            # Frontend should handle this case differently
+            return "modified", stripe_subscription_id
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error modifying subscription: {e}")
+            raise Exception(f"Failed to modify subscription: {str(e)}")
+    
+    # No existing subscription - create new checkout session
     # Get app base URL for success/cancel URLs
     app_base_url = getattr(settings, "app_base_url", "http://localhost:5173")
     
@@ -85,6 +148,71 @@ def create_checkout_session(user_id: str, user_email: str, plan: str) -> Tuple[s
     except stripe.error.StripeError as e:
         logger.error(f"Stripe error creating checkout session: {e}")
         raise Exception(f"Failed to create checkout session: {str(e)}")
+
+
+def _should_process_subscription_event(event: dict, subscription_id: str) -> bool:
+    """
+    Check if a subscription-related event should be processed based on timestamp.
+    
+    Fetches current subscription from Stripe and compares event timestamp with
+    subscription's updated timestamp to prevent out-of-order events from overwriting newer state.
+    
+    Args:
+        event: Stripe webhook event object
+        subscription_id: Stripe subscription ID
+    
+    Returns:
+        True if event should be processed (event is newer or equal), False if event is older
+    """
+    try:
+        # Get event timestamp
+        event_created = event.get("created")
+        if not event_created:
+            # If event has no timestamp, process it (shouldn't happen, but be safe)
+            logger.warning(f"Event {event.get('id')} has no created timestamp, processing anyway")
+            return True
+        
+        event_timestamp = datetime.fromtimestamp(event_created)
+        
+        # Fetch current subscription from Stripe to get its updated timestamp
+        try:
+            current_subscription = stripe.Subscription.retrieve(subscription_id)
+            
+            # Get subscription's updated timestamp (when it was last modified in Stripe)
+            # Stripe subscriptions have 'updated' field which is a Unix timestamp
+            subscription_updated = current_subscription.get("updated")
+            if subscription_updated:
+                subscription_timestamp = datetime.fromtimestamp(subscription_updated)
+                
+                # Only process if event is newer than or equal to current subscription state
+                if event_timestamp < subscription_timestamp:
+                    logger.info(
+                        f"Skipping event {event.get('id')} for subscription {subscription_id}: "
+                        f"event timestamp ({event_timestamp.isoformat()}) is older than "
+                        f"current subscription state ({subscription_timestamp.isoformat()})"
+                    )
+                    return False
+                else:
+                    logger.debug(
+                        f"Processing event {event.get('id')}: event timestamp ({event_timestamp.isoformat()}) "
+                        f"is newer than or equal to subscription state ({subscription_timestamp.isoformat()})"
+                    )
+                    return True
+            else:
+                # No updated timestamp on subscription, process the event
+                logger.debug(f"Subscription {subscription_id} has no updated timestamp, processing event")
+                return True
+                
+        except stripe.error.StripeError as e:
+            # If we can't retrieve subscription, log warning but process event anyway
+            # (subscription might have been deleted, or API issue)
+            logger.warning(f"Could not retrieve subscription {subscription_id} to check timestamp: {e}. Processing event anyway.")
+            return True
+            
+    except Exception as e:
+        # If timestamp comparison fails, process event anyway (fail open)
+        logger.warning(f"Error checking event timestamp for subscription {subscription_id}: {e}. Processing event anyway.")
+        return True
 
 
 def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
@@ -212,16 +340,13 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         # Update user subscription with metadata from Stripe
         # Dates are optional - never block update if dates are unavailable
         try:
-            # Check if user has an old subscription that needs to be cancelled (upgrade scenario)
+            # Check if this is a new subscription or an existing one being updated
             from app.database import get_user_subscription, get_db_connection
-            old_subscription = get_user_subscription(user_id)
-            old_stripe_subscription_id = None
-            if old_subscription and old_subscription.get("stripe_subscription_id"):
-                old_id = old_subscription["stripe_subscription_id"]
-                # Only cancel if it's a different subscription (upgrade scenario)
-                if old_id != subscription_id:
-                    old_stripe_subscription_id = old_id
-                    logger.info(f"User {user_id} has old subscription {old_stripe_subscription_id}, will cancel after new subscription is saved")
+            existing_subscription = get_user_subscription(user_id)
+            
+            # If user already has this subscription ID, it's an update (plan change via modify)
+            # If user has a different subscription ID, it's a new subscription (shouldn't happen with modify, but handle it)
+            is_new_subscription = not existing_subscription or existing_subscription.get("stripe_subscription_id") != subscription_id
             
             update_user_subscription(
                 user_id=user_id,
@@ -233,45 +358,22 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
                 current_period_end=current_period_end.isoformat() if current_period_end else None,
                 cancel_at_period_end=cancel_at_period_end
             )
-            logger.info(f"Updated subscription for user {user_id}: {plan_from_metadata}, price_id: {price_id}")
             
-            # Now that new subscription is successfully saved, cancel the old one if it exists
-            if old_stripe_subscription_id and old_stripe_subscription_id != subscription_id:
-                try:
-                    # Delete old subscription from Stripe
-                    try:
-                        stripe.Subscription.delete(old_stripe_subscription_id)
-                        logger.info(f"Deleted old subscription {old_stripe_subscription_id} from Stripe after successful upgrade")
-                    except stripe.error.StripeError as e:
-                        if "No such subscription" not in str(e) and "already been deleted" not in str(e):
-                            logger.warning(f"Could not delete old subscription {old_stripe_subscription_id} from Stripe: {e}")
-                            # Try to cancel at period end first, then delete
-                            try:
-                                stripe.Subscription.modify(
-                                    old_stripe_subscription_id,
-                                    cancel_at_period_end=True
-                                )
-                                stripe.Subscription.delete(old_stripe_subscription_id)
-                            except Exception as e2:
-                                logger.warning(f"Could not delete old subscription {old_stripe_subscription_id} after modify: {e2}")
-                    
-                    # The old subscription is already replaced in the database by update_user_subscription
-                    # which updates the existing row, so we don't need to delete it separately
-                    # Reset monthly workflows used (preserve trial workflows used)
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            UPDATE usage 
-                            SET monthly_workflows_used = 0,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = ?
-                        """, (user_id,))
-                        conn.commit()
-                    
-                    logger.info(f"Successfully cancelled old subscription {old_stripe_subscription_id} for user {user_id} after upgrade")
-                except Exception as e:
-                    # Don't fail the webhook if old subscription cancellation fails
-                    logger.error(f"Error cancelling old subscription {old_stripe_subscription_id} for user {user_id}: {e}")
+            if is_new_subscription:
+                logger.info(f"Created new subscription for user {user_id}: {plan_from_metadata}, price_id: {price_id}")
+                # Reset monthly workflows for new subscription (not for plan changes)
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE usage 
+                        SET monthly_workflows_used = 0,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = ?
+                    """, (user_id,))
+                    conn.commit()
+            else:
+                logger.info(f"Updated subscription for user {user_id}: {plan_from_metadata}, price_id: {price_id}")
+                # For plan changes, keep usage count (proration handles billing)
         except Exception as e:
             logger.error(f"Error updating subscription for user {user_id}: {e}")
             return False
@@ -283,6 +385,11 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         subscription = data
         subscription_id = subscription["id"]
         customer_id = subscription["customer"]
+        
+        # Check event ordering - don't process if event is older than current subscription state
+        if not _should_process_subscription_event(event, subscription_id):
+            logger.info(f"Skipping out-of-order event {event_id} for subscription {subscription_id}")
+            return True  # Return True to acknowledge receipt, but don't process
         
         # Try to find user by subscription ID first
         user = get_user_by_stripe_subscription_id(subscription_id)
@@ -356,6 +463,19 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         subscription = data
         subscription_id = subscription["id"]
         
+        # For deleted subscriptions, we still check ordering using the event timestamp
+        # vs the subscription's deleted timestamp (if available) or updated timestamp
+        # Note: Deleted subscriptions may not be retrievable, so we check before trying
+        try:
+            # Try to retrieve subscription to check timestamp (might fail if already deleted)
+            current_subscription = stripe.Subscription.retrieve(subscription_id)
+            if not _should_process_subscription_event(event, subscription_id):
+                logger.info(f"Skipping out-of-order deletion event {event_id} for subscription {subscription_id}")
+                return True
+        except stripe.error.StripeError:
+            # Subscription already deleted or not found - process the deletion event
+            logger.debug(f"Subscription {subscription_id} not found in Stripe, processing deletion event")
+        
         # Try to find user by subscription ID
         user = get_user_by_stripe_subscription_id(subscription_id)
         
@@ -385,6 +505,11 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         if not subscription_id:
             logger.warning("invoice.paid event missing subscription_id")
             return False
+        
+        # Check event ordering - don't process if event is older than current subscription state
+        if not _should_process_subscription_event(event, subscription_id):
+            logger.info(f"Skipping out-of-order invoice.paid event {event_id} for subscription {subscription_id}")
+            return True  # Return True to acknowledge receipt, but don't process
         
         # Try to find user by subscription ID
         user = get_user_by_stripe_subscription_id(subscription_id)
@@ -430,6 +555,11 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         if not subscription_id:
             logger.warning("invoice.payment_failed event missing subscription_id")
             return False
+        
+        # Check event ordering - don't process if event is older than current subscription state
+        if not _should_process_subscription_event(event, subscription_id):
+            logger.info(f"Skipping out-of-order invoice.payment_failed event {event_id} for subscription {subscription_id}")
+            return True  # Return True to acknowledge receipt, but don't process
         
         # Try to find user by subscription ID
         user = get_user_by_stripe_subscription_id(subscription_id)

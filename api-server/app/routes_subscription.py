@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Body
 from app.auth import get_current_user
 from app.database import (
     get_user_subscription,
-    increment_user_execution_count,
+    try_execute_and_increment,
     check_user_can_execute,
     update_user_subscription
 )
@@ -49,24 +49,24 @@ async def check_execution(current_user: dict = Depends(get_current_user)):
 @router.post("/increment-execution")
 async def increment_execution(current_user: dict = Depends(get_current_user)):
     """
-    Increment execution count for user.
+    Atomically check limit and increment execution count for user.
     Called after successful workflow execution.
     
+    This endpoint uses atomic check-and-increment to prevent race conditions.
+    
     Returns:
-        { "success": bool, "message": str }
+        { "success": bool, "message": str, "subscription_status": dict }
     """
     user_id = current_user["id"]
     
-    # Check if user can execute before incrementing
-    can_execute, message = check_user_can_execute(user_id)
-    if not can_execute:
+    # Atomically check limit and increment
+    success, message = try_execute_and_increment(user_id)
+    
+    if not success:
         return {
             "success": False,
             "message": message
         }
-    
-    # Increment execution count
-    increment_user_execution_count(user_id)
     
     # Get updated status
     status_info = get_subscription_status(user_id)
@@ -84,13 +84,16 @@ async def create_checkout(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Create Stripe checkout session for subscription.
-    If user has an existing subscription, it will be completely cancelled first.
+    Create Stripe checkout session for subscription, or modify existing subscription.
+    
+    If user has an existing subscription, it will be modified with proration instead of creating new.
+    If user has no subscription, creates a new checkout session.
     
     Request body: { "plan": "basic" | "plus" | "pro" }
     
     Returns:
-        { "checkout_url": str, "session_id": str }
+        For new subscriptions: { "checkout_url": str, "session_id": str, "modified": false }
+        For existing subscriptions: { "modified": true, "subscription_id": str, "message": str }
     """
     body = await request.json()
     plan = body.get("plan")
@@ -111,10 +114,27 @@ async def create_checkout(
             plan=plan
         )
         
+        # Check if subscription was modified (not new checkout)
+        if checkout_url == "modified":
+            return {
+                "modified": True,
+                "subscription_id": session_id,
+                "message": "Subscription plan updated successfully with proration"
+            }
+        
+        # New subscription - return checkout URL
         return {
             "checkout_url": checkout_url,
-            "session_id": session_id
+            "session_id": session_id,
+            "modified": False
         }
+    except ValueError as e:
+        # User-friendly error (e.g., already on same plan)
+        logger.warning(f"Subscription modification error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"Error creating checkout session: {e}")
         raise HTTPException(
@@ -149,9 +169,11 @@ async def check_execution_internal(request: Request, user_id: str = Body(..., em
 @router.post("/increment-execution-internal")
 async def increment_execution_internal(request: Request, user_id: str = Body(..., embed=True)):
     """
-    Internal endpoint to increment execution count.
+    Internal endpoint to atomically check limit and increment execution count.
     Called by workflow server after successful execution.
     Only accessible from localhost.
+    
+    This endpoint uses atomic check-and-increment to prevent race conditions.
     """
     # Check if request is from localhost (for security)
     client_host = request.client.host if request.client else None
@@ -161,16 +183,14 @@ async def increment_execution_internal(request: Request, user_id: str = Body(...
             detail="This endpoint is only accessible from localhost"
         )
     
-    # Check if user can execute before incrementing
-    can_execute, message = check_user_can_execute(user_id)
-    if not can_execute:
+    # Atomically check limit and increment
+    success, message = try_execute_and_increment(user_id)
+    
+    if not success:
         return {
             "success": False,
             "message": message
         }
-    
-    # Increment execution count
-    increment_user_execution_count(user_id)
     
     # Get updated status
     status_info = get_subscription_status(user_id)

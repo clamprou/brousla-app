@@ -173,11 +173,36 @@ export default function Profile() {
     if (!token) return
     
     setIsCreatingCheckout(true)
+    setError(null)
     try {
       const result = await createCheckoutSession(token, plan)
-      // Open Stripe checkout in modal instead of external browser
-      setCheckoutUrl(result.checkout_url)
-      setShowCheckoutModal(true)
+      
+      // Check if subscription was modified (plan change) or new subscription created
+      if (result.modified) {
+        // Plan change - subscription was modified with proration
+        // No checkout needed, show success message
+        const planNames = { basic: 'Basic', plus: 'Plus', pro: 'Pro' }
+        const planName = planNames[plan] || plan
+        const currentPlan = subscriptionStatus?.subscription_plan
+        const planOrder = { basic: 1, plus: 2, pro: 3 }
+        const isUpgrade = !currentPlan || (planOrder[plan] > (planOrder[currentPlan] || 0))
+        
+        setSuccessMessage(
+          `Your subscription has been successfully ${isUpgrade ? 'upgraded' : 'changed'} to ${planName}! ` +
+          `Your billing has been automatically prorated, so you'll only be charged for the difference. ` +
+          `The change is effective immediately and you now have access to all ${planName} features.`
+        )
+        setShowSuccessModal(true)
+        
+        // Refresh subscription status to show updated plan
+        if (fetchSubscriptionStatus) {
+          await fetchSubscriptionStatus()
+        }
+      } else {
+        // New subscription - open Stripe checkout
+        setCheckoutUrl(result.checkout_url)
+        setShowCheckoutModal(true)
+      }
       setIsCreatingCheckout(false)
     } catch (err) {
       setError(err.message || 'Failed to create checkout session')
@@ -313,8 +338,15 @@ export default function Profile() {
       {/* Success Modal */}
       <SuccessModal
         isOpen={showSuccessModal}
-        onClose={() => setShowSuccessModal(false)}
-        title="Success"
+        onClose={() => {
+          setShowSuccessModal(false)
+          setSuccessMessage('')
+        }}
+        title={
+          successMessage.includes('upgraded') ? 'Subscription Upgraded' :
+          successMessage.includes('changed') ? 'Subscription Changed' :
+          'Success'
+        }
         message={successMessage}
         buttonText="OK"
       />
