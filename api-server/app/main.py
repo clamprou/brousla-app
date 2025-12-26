@@ -1,20 +1,20 @@
 """FastAPI application entry point."""
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes_auth import router as auth_router
 from app.routes_ai import router as ai_router
 from app.routes_subscription import router as subscription_router
+from app.config import settings
 
-# Configure logging level to DEBUG for our modules
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-# Set specific loggers to DEBUG
-logging.getLogger("app.routes_ai").setLevel(logging.DEBUG)
-logging.getLogger("app.llm.openai_client").setLevel(logging.DEBUG)
-logging.getLogger("app.llm").setLevel(logging.DEBUG)
+# Configure logging (default INFO; opt-in DEBUG via LOG_LEVEL)
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=_LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+if _LOG_LEVEL == "DEBUG":
+    logging.getLogger("app.routes_ai").setLevel(logging.DEBUG)
+    logging.getLogger("app.llm.openai_client").setLevel(logging.DEBUG)
+    logging.getLogger("app.llm").setLevel(logging.DEBUG)
 
 app = FastAPI(
     title="Brousla App Server",
@@ -22,11 +22,21 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware (adjust origins for production)
+# CORS middleware
+# - Packaged Electron requests often send Origin: null
+# - Do not use allow_credentials=True with wildcard origins
+_cors_origins = [
+    o.strip()
+    for o in (settings.cors_allow_origins or "").split(",")
+    if o and o.strip()
+]
+if not _cors_origins:
+    _cors_origins = ["null"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=bool(settings.cors_allow_credentials),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,12 +65,11 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    from app.config import settings
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=True
+        reload=os.getenv("UVICORN_RELOAD", "0") == "1"
     )
 

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { X, FolderOpen, AlertCircle } from 'lucide-react'
 import { settingsManager } from '../utils/settingsManager.js'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
 export default function OutputFolderModal({ 
   isOpen, 
@@ -62,9 +63,9 @@ export default function OutputFolderModal({
           
           // Sync to backend preferences
           try {
-            const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+            const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
             prefs.aiWorkflowsOutputFolder = selectedPath
-            await fetch('http://127.0.0.1:8000/preferences', {
+            await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(prefs)
@@ -95,9 +96,9 @@ export default function OutputFolderModal({
             
             // Sync to backend preferences
             try {
-              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
               prefs.aiWorkflowsOutputFolder = path
-              await fetch('http://127.0.0.1:8000/preferences', {
+              await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(prefs)

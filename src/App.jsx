@@ -16,6 +16,7 @@ import ComfyUIConnectionModal from './components/ComfyUIConnectionModal.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { AuthProvider } from './contexts/AuthContext.jsx'
 import StripeCheckoutListener from './components/StripeCheckoutListener.jsx'
+import { WORKFLOW_BASE_URL } from './config/workflowServer.js'
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false)
@@ -94,7 +95,7 @@ export default function App() {
   useEffect(() => {
     const checkComfyUIConnection = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:8000/comfyui/test-connection')
+        const response = await fetch(`${WORKFLOW_BASE_URL}/comfyui/test-connection`)
         const data = await response.json()
 
         if (data.success) {
@@ -136,7 +137,7 @@ export default function App() {
     if (previousKey === 'settings' && activeKey !== 'settings' && !isComfyUIConnected) {
       const checkConnection = async () => {
         try {
-          const response = await fetch('http://127.0.0.1:8000/comfyui/test-connection')
+          const response = await fetch(`${WORKFLOW_BASE_URL}/comfyui/test-connection`)
           const data = await response.json()
           if (!data.success) {
             setShowConnectionModal(true)

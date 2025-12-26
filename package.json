@@ -61,6 +61,7 @@
     "files": [
       "dist/**",
       "electron/**",
+      "api-server/**",
       "workflow-server/**",
       "assets/**",
       "models/**",
@@ -70,6 +71,13 @@
       {
         "from": "workflow-server",
         "to": "workflow-server",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "api-server",
+        "to": "api-server",
         "filter": [
           "**/*"
         ]

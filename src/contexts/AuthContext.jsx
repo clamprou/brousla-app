@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { login as apiLogin, register as apiRegister, handleGoogleOAuthCallback } from '../utils/apiClient.js'
 import { getUserIdFromToken } from '../utils/userUtils.js'
 import { BASE_API_URL } from '../config/api.js'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
 const AuthContext = createContext(null)
 
@@ -165,8 +166,7 @@ export function AuthProvider({ children }) {
     // Deactivate all workflows before logout
     if (currentUserId) {
       try {
-        const BACKEND_URL = 'http://127.0.0.1:8000'
-        await fetch(`${BACKEND_URL}/workflows/deactivate-all`, {
+        await fetch(`${WORKFLOW_BASE_URL}/workflows/deactivate-all`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Settings as SettingsIcon, FolderOpen, CheckCircle, AlertCircle, Server, Bot } from 'lucide-react'
 import { settingsManager } from '../utils/settingsManager.js'
 import ErrorModal from '../components/ErrorModal.jsx'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
 export default function Settings() {
   const [settings, setSettings] = useState({})
@@ -17,7 +18,7 @@ export default function Settings() {
     // Sync settings from backend preferences
     const syncFromBackend = async () => {
       try {
-        const backendPrefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+        const backendPrefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
         
         // Sync ComfyUI server URL
         const localPrefs = JSON.parse(localStorage.getItem('userPreferences') || '{}')
@@ -53,7 +54,7 @@ export default function Settings() {
         
         // Sync to backend if needed
         if (needsBackendSync) {
-          await fetch('http://127.0.0.1:8000/preferences', {
+          await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(backendPrefs)
@@ -94,9 +95,9 @@ export default function Settings() {
     
     // Sync to backend preferences
     try {
-      const backendPrefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+      const backendPrefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
       backendPrefs.comfyUiServer = url
-      await fetch('http://127.0.0.1:8000/preferences', {
+      await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backendPrefs)
@@ -125,9 +126,9 @@ export default function Settings() {
             
             // Sync to backend preferences
             try {
-              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
               prefs.comfyuiPath = selectedPath
-              await fetch('http://127.0.0.1:8000/preferences', {
+              await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(prefs)
@@ -165,9 +166,9 @@ export default function Settings() {
             
             // Sync to backend preferences
             try {
-              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
               prefs.comfyuiPath = path
-              await fetch('http://127.0.0.1:8000/preferences', {
+              await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(prefs)
@@ -231,9 +232,9 @@ export default function Settings() {
           
           // Sync to backend preferences
           try {
-            const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+            const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
             prefs.aiWorkflowsOutputFolder = selectedPath
-            await fetch('http://127.0.0.1:8000/preferences', {
+            await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(prefs)
@@ -258,9 +259,9 @@ export default function Settings() {
             
             // Sync to backend preferences
             try {
-              const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+              const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
               prefs.aiWorkflowsOutputFolder = path
-              await fetch('http://127.0.0.1:8000/preferences', {
+              await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(prefs)
@@ -397,9 +398,9 @@ export default function Settings() {
                   settingsManager.setComfyUIPath(null, null)
                   // Sync to backend preferences
                   try {
-                    const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+                    const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
                     prefs.comfyuiPath = null
-                    await fetch('http://127.0.0.1:8000/preferences', {
+                    await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(prefs)
@@ -474,9 +475,9 @@ export default function Settings() {
                   settingsManager.setAIWorkflowsOutputFolder(null)
                   // Sync to backend preferences
                   try {
-                    const prefs = await fetch('http://127.0.0.1:8000/preferences').then(r => r.json())
+                    const prefs = await fetch(`${WORKFLOW_BASE_URL}/preferences`).then(r => r.json())
                     prefs.aiWorkflowsOutputFolder = null
-                    await fetch('http://127.0.0.1:8000/preferences', {
+                    await fetch(`${WORKFLOW_BASE_URL}/preferences`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(prefs)

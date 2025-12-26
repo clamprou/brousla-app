@@ -126,13 +126,6 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
             logger.warning(f"checkout.session.completed missing required fields: user_id={user_id}, subscription_id={subscription_id}")
             return False
         
-        # #region agent log
-        import json
-        import time
-        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"stripe_service.py:123","message":"Session object inspection","data":{"session_keys":list(session.keys()) if hasattr(session, 'keys') else None,"subscription_id":subscription_id},"timestamp":int(time.time()*1000)})+"\n")
-        # #endregion
-        
         # Get subscription details
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
@@ -161,28 +154,6 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
         current_period_start = None
         current_period_end = None
         cancel_at_period_end = False
-        
-        # #region agent log
-        import json
-        import time
-        sub_type = type(subscription).__name__
-        has_get = hasattr(subscription, 'get')
-        has_dict_keys = hasattr(subscription, 'keys')
-        sub_keys = list(subscription.keys()) if has_dict_keys else None
-        # Check for period-related keys
-        period_keys = [k for k in (sub_keys or []) if 'period' in k.lower() or 'start' in k.lower() or 'end' in k.lower()]
-        # Try to get all values to see what's actually in the response
-        all_values = {}
-        if has_dict_keys:
-            for key in sub_keys[:20]:  # Sample first 20 keys
-                try:
-                    val = subscription.get(key) if has_get else subscription[key]
-                    all_values[key] = str(val)[:50] if val is not None else None
-                except:
-                    all_values[key] = "<error>"
-        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"stripe_service.py:158","message":"Subscription object inspection","data":{"type":sub_type,"has_get":has_get,"has_keys":has_dict_keys,"all_keys":sub_keys,"period_related_keys":period_keys,"sample_values":all_values},"timestamp":int(time.time()*1000)})+"\n")
-        # #endregion
         
         # Try to access current_period_start/end - dates are in items.data[0] for flexible billing
         try:
@@ -217,29 +188,8 @@ def handle_stripe_webhook(payload: bytes, sig_header: str) -> bool:
                         raise ValueError("No subscription items found")
                 else:
                     raise ValueError("Subscription items not accessible")
-            
-            # #region agent log
-            # Determine source of dates for logging
-            if hasattr(subscription, 'current_period_start') and subscription.current_period_start:
-                source = "root_attr"
-            elif subscription.get("current_period_start") if hasattr(subscription, 'get') else None:
-                source = "root_dict"
-            else:
-                source = "items"
-            with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"stripe_service.py:221","message":"Date retrieval succeeded","data":{"current_period_start":current_period_start.isoformat() if current_period_start else None,"current_period_end":current_period_end.isoformat() if current_period_end else None,"source":source},"timestamp":int(time.time()*1000)})+"\n")
-            # #endregion
         except (AttributeError, KeyError, TypeError, ValueError) as e:
-            # #region agent log
-            with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"stripe_service.py:210","message":"All date retrieval methods failed","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(time.time()*1000)})+"\n")
-            # #endregion
             logger.warning(f"Could not retrieve subscription dates for {subscription_id}: {e}. Continuing without dates.")
-        
-        # #region agent log
-        with open('c:\\Users\\chris\\Desktop\\AI-Generation-Tools\\brousla-app\\.cursor\\debug.log', 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"stripe_service.py:195","message":"Before database update","data":{"current_period_start":current_period_start.isoformat() if current_period_start else None,"current_period_end":current_period_end.isoformat() if current_period_end else None,"cancel_at_period_end":cancel_at_period_end},"timestamp":int(time.time()*1000)})+"\n")
-        # #endregion
         
         # Update user subscription with metadata from Stripe
         # Dates are optional - never block update if dates are unavailable

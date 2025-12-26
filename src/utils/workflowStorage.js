@@ -1,5 +1,5 @@
 // Workflow storage API service
-const BACKEND_URL = 'http://127.0.0.1:8000'
+import { WORKFLOW_BASE_URL } from '../config/workflowServer.js'
 
 /**
  * Get all stored workflows for the current user
@@ -13,7 +13,7 @@ export async function getStoredWorkflows(userId) {
   }
   
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows`, {
       headers: {
         'X-User-Id': userId
       }
@@ -55,7 +55,7 @@ export async function saveWorkflow(name, description, workflowFile, userId) {
     formData.append('name', name || '')
     formData.append('description', description || '')
     
-    const response = await fetch(`${BACKEND_URL}/stored-workflows`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows`, {
       method: 'POST',
       headers: {
         'X-User-Id': userId
@@ -90,7 +90,7 @@ export async function loadStoredWorkflow(workflowId, userId) {
   }
   
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows/${workflowId}`, {
       headers: {
         'X-User-Id': userId
       }
@@ -125,7 +125,7 @@ export async function deleteStoredWorkflow(workflowId, userId) {
   }
   
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows/${workflowId}`, {
       method: 'DELETE',
       headers: {
         'X-User-Id': userId
@@ -165,7 +165,7 @@ export async function updateWorkflowMetadata(workflowId, name, description, user
     if (name !== undefined) updates.name = name
     if (description !== undefined) updates.description = description
     
-    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows/${workflowId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -201,7 +201,7 @@ export async function markWorkflowUsed(workflowId, userId) {
   }
   
   try {
-    const response = await fetch(`${BACKEND_URL}/stored-workflows/${workflowId}/use`, {
+    const response = await fetch(`${WORKFLOW_BASE_URL}/stored-workflows/${workflowId}/use`, {
       method: 'POST',
       headers: {
         'X-User-Id': userId
