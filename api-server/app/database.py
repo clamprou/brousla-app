@@ -696,15 +696,15 @@ def try_execute_and_increment(user_id: str) -> tuple[bool, str]:
             else:
                 return False, "Subscription is not active. Please renew your subscription."
         
-        # Check subscription end date
+        # Check subscription end date (validation only - doesn't affect reset/increment logic)
         end_date = subscription.get("current_period_end")
         if end_date:
             try:
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                 if end_dt.tzinfo:
                     end_dt = end_dt.replace(tzinfo=None)
-                now = datetime.utcnow()
-                if end_dt < now:
+                check_now = datetime.utcnow()
+                if end_dt < check_now:
                     return False, "Subscription has expired. Please renew your subscription."
             except (ValueError, AttributeError):
                 pass
@@ -725,13 +725,14 @@ def try_execute_and_increment(user_id: str) -> tuple[bool, str]:
             else:
                 monthly_limit = 0
         
-        # Atomic increment with limit check and reset logic
+        # Get timestamp once for consistency (reset/increment decision must be atomic in SQL)
         now = datetime.utcnow()
         now_iso = now.isoformat()
         next_month_start = _first_day_next_month(now)
         
-        # Use CASE statement to atomically handle reset-or-increment and limit check
-        # SQLite datetime() function works with ISO format strings
+        # CRITICAL: Reset and increment logic is ENTIRELY in this single SQL UPDATE using CASE
+        # No Python branching code determines reset vs increment - it's all in SQL
+        # This prevents: lost increments, double resets, boundary race bugs
         cursor.execute("""
             UPDATE usage 
             SET monthly_workflows_used = CASE 
